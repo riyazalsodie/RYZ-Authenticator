@@ -65,12 +65,12 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
   };
 
   return (
-    <div className={`w-full h-full flex flex-col items-center justify-center select-none overflow-y-auto ${
-      isMobile() ? 'p-3 bg-[#000000]' : 'p-6 bg-transparent'
+    <div className={`w-full h-full flex flex-col items-center select-none overflow-y-auto overflow-x-hidden ${
+      isMobile() ? 'px-4 pt-8 pb-14 bg-[#000000]' : 'p-6 justify-center bg-transparent'
     }`}>
-      <div className={`w-full max-w-sm flex flex-col items-center text-center space-y-5 bg-[#030504] ${
+      <div className={`w-full max-w-sm my-auto flex flex-col items-center text-center space-y-5 bg-[#030504] ${
         isMobile()
-          ? 'border-0 rounded-none shadow-none p-4'
+          ? 'border-0 rounded-none shadow-none p-2'
           : 'border border-[#00FF88]/20 rounded-2xl p-7 shadow-[0_0_60px_rgba(0,255,136,0.12)]'
       }`}>
         {/* Brand Icon Shield */}

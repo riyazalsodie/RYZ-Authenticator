@@ -8,7 +8,7 @@ use argon2::{
     Argon2,
 };
 
-pub const DEFAULT_DB_URL: &str = "host=127.0.0.1 user=postgres dbname=ryz_auth port=5432";
+pub const DEFAULT_DB_URL: &str = "postgresql://postgres:REDACTED@127.0.0.1:5432/ryz_authenticator";
 
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
 pub struct UserProfile {
