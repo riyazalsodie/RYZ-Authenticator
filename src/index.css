@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 0%;
+    --foreground: 150 20% 98%;
+    --card: 150 10% 3%;
+    --card-foreground: 150 20% 98%;
+    --popover: 150 10% 3%;
+    --popover-foreground: 150 20% 98%;
+    --primary: 150 100% 50%;
+    --primary-foreground: 150 100% 5%;
+    --secondary: 150 10% 8%;
+    --secondary-foreground: 150 20% 98%;
+    --muted: 150 10% 7%;
+    --muted-foreground: 150 10% 50%;
+    --accent: 150 20% 10%;
+    --accent-foreground: 150 20% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 150 20% 10%;
+    --input: 150 20% 10%;
+    --ring: 150 100% 50%;
+    --radius: 0.75rem;
+  }
+}
+
+html, body, #root {
+  background: transparent !important;
+  background-color: transparent !important;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #F3F4F6;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom Scrollbar for Account List */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 255, 136, 0.15);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 255, 136, 0.35);
+}
+
+/* Glassmorphism primitives */
+.glass-panel {
+  background: rgba(3, 6, 4, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(0, 255, 136, 0.12);
+}
+
+.glass-panel-hover:hover {
+  background: rgba(6, 12, 8, 0.95);
+  border-color: rgba(0, 255, 136, 0.28);
+}
+
+/* Brand glow effects */
+.brand-glow {
+  box-shadow: 0 0 25px -4px rgba(0, 255, 136, 0.3);
+}
+
+.code-font {
+  font-family: 'Geist Mono', 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.12em;
+}
