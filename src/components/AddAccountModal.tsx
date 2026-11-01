@@ -15,6 +15,7 @@ import jsQR from 'jsqr';
 import { BrandIcon, POPULAR_PRESETS } from './BrandIcon';
 import { CustomDropdown } from './CustomDropdown';
 import { DEFAULT_GROUPS } from '../types';
+import { isMobile } from '../utils/platform';
 
 interface AddAccountModalProps {
   isOpen: boolean;
@@ -192,8 +193,12 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({
   };
 
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in rounded-2xl overflow-hidden">
-      <div className="relative w-full max-w-md bg-[#030504] border border-[#00FF88]/20 rounded-2xl shadow-[0_0_50px_rgba(0,255,136,0.12)] p-6 overflow-hidden">
+    <div className={`absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in overflow-hidden ${
+      isMobile() ? 'rounded-none' : 'rounded-2xl'
+    }`}>
+      <div className={`relative w-full max-w-md bg-[#030504] border border-[#00FF88]/20 shadow-[0_0_50px_rgba(0,255,136,0.12)] p-6 overflow-hidden ${
+        isMobile() ? 'rounded-none' : 'rounded-2xl'
+      }`}>
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-white/5">
           <div className="flex items-center space-x-2.5">

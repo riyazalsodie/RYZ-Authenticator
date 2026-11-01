@@ -12,6 +12,7 @@ import {
 import { ActiveAccount, Algorithm, DEFAULT_GROUPS } from '../types';
 import { BrandIcon, POPULAR_PRESETS } from './BrandIcon';
 import { CustomDropdown } from './CustomDropdown';
+import { isMobile } from '../utils/platform';
 
 interface EditAccountModalProps {
   isOpen: boolean;
@@ -97,8 +98,12 @@ export const EditAccountModal: React.FC<EditAccountModalProps> = ({
   };
 
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in rounded-2xl overflow-hidden">
-      <div className="relative w-full max-w-lg rounded-2xl bg-[#030504] border border-[#00FF88]/20 shadow-[0_0_50px_rgba(0,255,136,0.12)] p-6 overflow-hidden">
+    <div className={`absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in overflow-hidden ${
+      isMobile() ? 'rounded-none' : 'rounded-2xl'
+    }`}>
+      <div className={`relative w-full max-w-lg bg-[#030504] border border-[#00FF88]/20 shadow-[0_0_50px_rgba(0,255,136,0.12)] p-6 overflow-hidden ${
+        isMobile() ? 'rounded-none' : 'rounded-2xl'
+      }`}>
         {/* Neon accent corner glows */}
         <div className="absolute top-0 right-0 w-32 h-32 bg-[#00FF88]/5 rounded-full blur-2xl pointer-events-none" />
         <div className="absolute bottom-0 left-0 w-32 h-32 bg-[#10B981]/5 rounded-full blur-2xl pointer-events-none" />

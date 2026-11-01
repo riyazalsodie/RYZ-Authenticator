@@ -5,6 +5,8 @@ import {
   getHardwareSecurityBadge,
   getBiometricUnlockLabel,
   getBiometricErrorMessage,
+  getAppTagline,
+  isMobile,
 } from '../utils/platform';
 import {
   faKey,
@@ -117,8 +119,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   return (
-    <div className="w-full h-full flex flex-col items-center justify-center p-6 bg-transparent select-none overflow-y-auto">
-      <div className="w-full max-w-sm flex flex-col items-center text-center space-y-4 bg-[#030504] border border-[#00FF88]/20 rounded-2xl p-6 shadow-[0_0_60px_rgba(0,255,136,0.12)]">
+    <div className={`w-full h-full flex flex-col items-center justify-center select-none overflow-y-auto ${
+      isMobile() ? 'p-3 bg-[#000000]' : 'p-6 bg-transparent'
+    }`}>
+      <div className={`w-full max-w-sm flex flex-col items-center text-center space-y-4 bg-[#030504] ${
+        isMobile()
+          ? 'border-0 rounded-none shadow-none p-4'
+          : 'border border-[#00FF88]/20 rounded-2xl p-6 shadow-[0_0_60px_rgba(0,255,136,0.12)]'
+      }`}>
         {/* Brand Icon Shield */}
         <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#00FF88] to-[#10B981] flex items-center justify-center shadow-xl shadow-[#00FF88]/25">
           <FontAwesomeIcon icon={faLock} className="w-5 h-5 text-black" />
@@ -130,7 +138,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </h2>
           <div className="flex items-center justify-center space-x-1.5 mt-1 text-[11px] text-neutral-400">
             <span className="w-1.5 h-1.5 rounded-full bg-[#00FF88] shadow-[0_0_6px_#00FF88]" />
-            <span>No-Bloat Authenticator for PC</span>
+            <span>{getAppTagline()}</span>
           </div>
         </div>
 

@@ -1,5 +1,6 @@
 import React from 'react';
 import { ViewMode, UserProfile } from '../types';
+import { getAppTagline } from '../utils/platform';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faKey,
@@ -49,7 +50,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           />
           <div>
             <h1 className="text-sm font-bold tracking-wider text-white">RYZ AUTH</h1>
-            <p className="text-[10px] text-neutral-400 font-medium">No-Bloat Authenticator for PC</p>
+            <p className="text-[10px] text-neutral-400 font-medium">{getAppTagline()}</p>
           </div>
         </div>
 

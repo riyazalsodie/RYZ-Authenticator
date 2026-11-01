@@ -3,6 +3,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   getBiometricUnlockLabel,
   getBiometricErrorMessage,
+  isMobile,
 } from '../utils/platform';
 import {
   faKey,
@@ -64,8 +65,14 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
   };
 
   return (
-    <div className="w-full h-full flex flex-col items-center justify-center p-6 bg-transparent select-none overflow-y-auto">
-      <div className="w-full max-w-sm flex flex-col items-center text-center space-y-5 bg-[#030504] border border-[#00FF88]/20 rounded-2xl p-7 shadow-[0_0_60px_rgba(0,255,136,0.12)]">
+    <div className={`w-full h-full flex flex-col items-center justify-center select-none overflow-y-auto ${
+      isMobile() ? 'p-3 bg-[#000000]' : 'p-6 bg-transparent'
+    }`}>
+      <div className={`w-full max-w-sm flex flex-col items-center text-center space-y-5 bg-[#030504] ${
+        isMobile()
+          ? 'border-0 rounded-none shadow-none p-4'
+          : 'border border-[#00FF88]/20 rounded-2xl p-7 shadow-[0_0_60px_rgba(0,255,136,0.12)]'
+      }`}>
         {/* Brand Icon Shield */}
         <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#00FF88] to-[#10B981] flex items-center justify-center shadow-xl shadow-[#00FF88]/25">
           <FontAwesomeIcon icon={faLock} className="w-6 h-6 text-black" />

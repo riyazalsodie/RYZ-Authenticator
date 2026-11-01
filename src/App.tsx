@@ -14,6 +14,7 @@ import {
   faKey,
   faFolder,
 } from '@fortawesome/free-solid-svg-icons';
+import { isMobile } from './utils/platform';
 
 export const App: React.FC = () => {
   const [vaultStatus, setVaultStatus] = useState<VaultStatus>({ exists: false, is_unlocked: false });
@@ -516,8 +517,12 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="h-screen w-screen bg-transparent select-none overflow-hidden m-0 p-0">
-      <div className="relative w-full h-full bg-[#000000] border border-[#00FF88]/20 rounded-2xl overflow-hidden flex flex-col shadow-[0_0_50px_rgba(0,255,136,0.06)]">
+    <div className={`h-screen w-screen select-none overflow-hidden m-0 p-0 ${isMobile() ? 'bg-[#000000]' : 'bg-transparent'}`}>
+      <div className={`relative w-full h-full bg-[#000000] overflow-hidden flex flex-col ${
+        isMobile()
+          ? 'border-0 rounded-none shadow-none'
+          : 'border border-[#00FF88]/20 rounded-2xl shadow-[0_0_50px_rgba(0,255,136,0.06)]'
+      }`}>
         <TitleBar />
         <div className="flex-1 relative overflow-hidden flex flex-col">
           {renderContent()}

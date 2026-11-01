@@ -30,6 +30,14 @@ export function isLinux(): boolean {
   return getPlatform() === 'linux';
 }
 
+export function getAppTagline(): string {
+  const p = getPlatform();
+  if (p === 'android' || p === 'ios') return 'No-Bloat Authenticator for Mobile';
+  if (p === 'mac') return 'No-Bloat Authenticator for Mac';
+  if (p === 'linux') return 'No-Bloat Authenticator for Linux';
+  return 'No-Bloat Authenticator for PC';
+}
+
 /**
  * Platform-adaptive label for "Remember me" session persistence
  */

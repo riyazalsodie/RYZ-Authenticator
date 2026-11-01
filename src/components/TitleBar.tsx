@@ -56,7 +56,9 @@ export const TitleBar: React.FC = () => {
     <div
       data-tauri-drag-region
       onMouseDown={handleDrag}
-      className="h-10 bg-[#000000] border-b border-[#00FF88]/15 rounded-t-2xl flex items-center justify-between select-none z-50 text-neutral-300 cursor-move shrink-0 px-2.5"
+      className={`h-10 bg-[#000000] border-b border-[#00FF88]/15 flex items-center justify-between select-none z-50 text-neutral-300 cursor-move shrink-0 px-2.5 ${
+        isMobile ? 'rounded-none' : 'rounded-t-2xl'
+      }`}
     >
       {/* macOS Traffic Lights (if on Mac) */}
       {isMac && !isMobile && (
