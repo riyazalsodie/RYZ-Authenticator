@@ -1,6 +1,12 @@
 import React, { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
+  getRememberLabel,
+  getHardwareSecurityBadge,
+  getBiometricUnlockLabel,
+  getBiometricErrorMessage,
+} from '../utils/platform';
+import {
   faKey,
   faFingerprint,
   faLock,
@@ -104,7 +110,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       await onUnlockWindowsHello();
     } catch (err: any) {
-      setError('Windows Hello biometric or PIN authentication failed.');
+      setError(getBiometricErrorMessage());
     } finally {
       setLoading(false);
     }
@@ -182,7 +188,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {mode === 'login' ? (
           <>
-            {/* Windows Hello Instant Unlock */}
+            {/* Biometric / Quick Instant Unlock */}
             <button
               type="button"
               onClick={handleHello}
@@ -190,7 +196,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               className="w-full flex items-center justify-center space-x-2 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-neutral-200 transition-all hover:border-[#00FF88]/40 cursor-pointer active:scale-98"
             >
               <FontAwesomeIcon icon={faFingerprint} className="w-4 h-4 text-[#00FF88]" />
-              <span>Unlock with Windows Hello / DPAPI</span>
+              <span>{getBiometricUnlockLabel()}</span>
             </button>
 
             <div className="flex items-center w-full my-0.5">
@@ -272,15 +278,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     </div>
                   </div>
                   <span className="text-xs text-neutral-300 group-hover:text-white transition-colors font-medium">
-                    Remember me on this PC
+                    {getRememberLabel()}
                   </span>
                 </label>
                 <div
                   className="flex items-center space-x-1 text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 font-medium"
-                  title="Protected by Windows DPAPI hardware-bound encryption. No browser cookies or cloud session tokens exist to steal."
+                  title={getHardwareSecurityBadge().title}
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <span>DPAPI Anti-Theft</span>
+                  <span>{getHardwareSecurityBadge().label}</span>
                 </div>
               </div>
 
@@ -405,15 +411,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   </div>
                 </div>
                 <span className="text-xs text-neutral-300 group-hover:text-white transition-colors font-medium">
-                  Remember me on this PC
+                  {getRememberLabel()}
                 </span>
               </label>
               <div
                 className="flex items-center space-x-1 text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 font-medium"
-                title="Protected by Windows DPAPI hardware-bound encryption. No browser cookies or cloud session tokens exist to steal."
+                title={getHardwareSecurityBadge().title}
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>DPAPI Anti-Theft</span>
+                <span>{getHardwareSecurityBadge().label}</span>
               </div>
             </div>
 

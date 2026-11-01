@@ -14,6 +14,11 @@ import {
   faFingerprint,
 } from '@fortawesome/free-solid-svg-icons';
 import { CustomDropdown } from './CustomDropdown';
+import {
+  getAutostartInfo,
+  getProtectionStatus,
+  isMobile,
+} from '../utils/platform';
 
 export interface VaultSettings {
   autostart: boolean;
@@ -124,74 +129,81 @@ export const SettingsScreen: React.FC = () => {
           <span>System & Window Behavior</span>
         </h3>
 
-        {/* Windows Autostart */}
-        <div className="flex items-center justify-between py-2 border-b border-white/5">
-          <div>
-            <div className="text-xs font-semibold text-white flex items-center space-x-2">
-              <FontAwesomeIcon icon={faPowerOff} className="w-3.5 h-3.5 text-neutral-400" />
-              <span>Launch on Windows Startup</span>
+        {/* Platform-Adaptive Autostart / Launch */}
+        {getAutostartInfo().supported && (
+          <div className="flex items-center justify-between py-2 border-b border-white/5">
+            <div>
+              <div className="text-xs font-semibold text-white flex items-center space-x-2">
+                <FontAwesomeIcon icon={faPowerOff} className="w-3.5 h-3.5 text-neutral-400" />
+                <span>{getAutostartInfo().title}</span>
+              </div>
+              <p className="text-[11px] text-neutral-500 mt-0.5">
+                {getAutostartInfo().description}
+              </p>
             </div>
-            <p className="text-[11px] text-neutral-500 mt-0.5">
-              Automatically starts RYZ Auth in background when you sign in to Windows.
-            </p>
-          </div>
-          <button
-            onClick={() => updateSetting('autostart', !settings.autostart)}
-            className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-200 focus:outline-none ${
-              settings.autostart ? 'bg-[#00FF88]' : 'bg-neutral-800'
-            }`}
-          >
-            <div
-              className={`bg-black w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${
-                settings.autostart ? 'translate-x-5' : 'translate-x-0'
+            <button
+              onClick={() => updateSetting('autostart', !settings.autostart)}
+              className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-200 focus:outline-none ${
+                settings.autostart ? 'bg-[#00FF88]' : 'bg-neutral-800'
               }`}
-            />
-          </button>
-        </div>
+            >
+              <div
+                className={`bg-black w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${
+                  settings.autostart ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+        )}
 
-        {/* Minimize to Tray */}
-        <div className="flex items-center justify-between py-2 border-b border-white/5">
-          <div>
-            <div className="text-xs font-semibold text-white">Minimize to System Tray</div>
-            <p className="text-[11px] text-neutral-500 mt-0.5">
-              Keeps RYZ Auth running in taskbar notification tray when window is minimized.
-            </p>
-          </div>
-          <button
-            onClick={() => updateSetting('minimize_to_tray', !settings.minimize_to_tray)}
-            className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-200 focus:outline-none ${
-              settings.minimize_to_tray ? 'bg-[#00FF88]' : 'bg-neutral-800'
-            }`}
-          >
-            <div
-              className={`bg-black w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${
-                settings.minimize_to_tray ? 'translate-x-5' : 'translate-x-0'
-              }`}
-            />
-          </button>
-        </div>
+        {/* Desktop System Tray Controls */}
+        {!isMobile() && (
+          <>
+            {/* Minimize to Tray */}
+            <div className="flex items-center justify-between py-2 border-b border-white/5">
+              <div>
+                <div className="text-xs font-semibold text-white">Minimize to System Tray</div>
+                <p className="text-[11px] text-neutral-500 mt-0.5">
+                  Keeps RYZ Auth running in taskbar notification tray when window is minimized.
+                </p>
+              </div>
+              <button
+                onClick={() => updateSetting('minimize_to_tray', !settings.minimize_to_tray)}
+                className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-200 focus:outline-none ${
+                  settings.minimize_to_tray ? 'bg-[#00FF88]' : 'bg-neutral-800'
+                }`}
+              >
+                <div
+                  className={`bg-black w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${
+                    settings.minimize_to_tray ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
 
-        {/* Close to Tray */}
-        <div className="flex items-center justify-between py-2 border-b border-white/5">
-          <div>
-            <div className="text-xs font-semibold text-white">Close to System Tray</div>
-            <p className="text-[11px] text-neutral-500 mt-0.5">
-              Closing the window hides it to system tray instead of terminating the process.
-            </p>
-          </div>
-          <button
-            onClick={() => updateSetting('close_to_tray', !settings.close_to_tray)}
-            className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-200 focus:outline-none ${
-              settings.close_to_tray ? 'bg-[#00FF88]' : 'bg-neutral-800'
-            }`}
-          >
-            <div
-              className={`bg-black w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${
-                settings.close_to_tray ? 'translate-x-5' : 'translate-x-0'
-              }`}
-            />
-          </button>
-        </div>
+            {/* Close to Tray */}
+            <div className="flex items-center justify-between py-2 border-b border-white/5">
+              <div>
+                <div className="text-xs font-semibold text-white">Close to System Tray</div>
+                <p className="text-[11px] text-neutral-500 mt-0.5">
+                  Closing the window hides it to system tray instead of terminating the process.
+                </p>
+              </div>
+              <button
+                onClick={() => updateSetting('close_to_tray', !settings.close_to_tray)}
+                className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-200 focus:outline-none ${
+                  settings.close_to_tray ? 'bg-[#00FF88]' : 'bg-neutral-800'
+                }`}
+              >
+                <div
+                  className={`bg-black w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${
+                    settings.close_to_tray ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+          </>
+        )}
 
         {/* Auto-Lock Timer */}
         <div className="flex items-center justify-between py-2">
@@ -228,15 +240,15 @@ export const SettingsScreen: React.FC = () => {
           <span>Security & Clipboard Protection</span>
         </h3>
 
-        {/* Windows Hello Status */}
+        {/* Hardware / Biometric Protection Status */}
         <div className="flex items-center justify-between py-2 border-b border-white/5">
           <div>
             <div className="text-xs font-semibold text-white flex items-center space-x-2">
               <FontAwesomeIcon icon={faFingerprint} className="w-3.5 h-3.5 text-[#00FF88]" />
-              <span>Windows Hello / DPAPI Protection</span>
+              <span>{getProtectionStatus().title}</span>
             </div>
             <p className="text-[11px] text-neutral-500 mt-0.5">
-              Active. Vault keys are bound to your Windows user profile credentials.
+              {getProtectionStatus().description}
             </p>
           </div>
           <span className="px-2.5 py-1 rounded-full bg-[#00FF88]/10 border border-[#00FF88]/30 text-[10px] font-semibold text-[#00FF88] shadow-[0_0_12px_rgba(0,255,136,0.15)]">

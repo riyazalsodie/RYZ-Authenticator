@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
+  getBiometricUnlockLabel,
+  getBiometricErrorMessage,
+} from '../utils/platform';
+import {
   faKey,
   faFingerprint,
   faLock,
@@ -53,7 +57,7 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
     try {
       await onUnlockWindowsHello();
     } catch (err: any) {
-      setError('Windows Hello biometric or PIN authentication failed.');
+      setError(getBiometricErrorMessage());
     } finally {
       setLoading(false);
     }
@@ -79,7 +83,7 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
           </div>
         )}
 
-        {/* Windows Hello Instant Unlock */}
+        {/* Biometric / Quick Instant Unlock */}
         <button
           type="button"
           onClick={handleHello}
@@ -87,7 +91,7 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
           className="w-full flex items-center justify-center space-x-2 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-neutral-200 transition-all hover:border-[#00FF88]/40 cursor-pointer active:scale-98"
         >
           <FontAwesomeIcon icon={faFingerprint} className="w-4 h-4 text-[#00FF88]" />
-          <span>Unlock with Windows Hello / DPAPI</span>
+          <span>{getBiometricUnlockLabel()}</span>
         </button>
 
         <div className="flex items-center w-full my-1">
