@@ -4,6 +4,10 @@
 
 # RYZ Authenticator
 
+<p align="center">
+  <img src="docs/social-preview.png" alt="RYZ Authenticator Hero Banner — 100% Rust & Tauri v2 2FA / TOTP Authenticator" width="100%" style="border-radius: 12px; margin: 16px 0;" />
+</p>
+
 **Open-Source, Zero-Knowledge 2FA & TOTP Authenticator for Windows, macOS, Linux, Android & iOS**  
 *The lightweight, native Rust alternative to Authy Desktop, Google Authenticator, and 2FAS.*
 
