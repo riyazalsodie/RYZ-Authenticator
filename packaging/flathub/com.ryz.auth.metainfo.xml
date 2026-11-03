@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.ryz.auth</id>
+  <name>RYZ Authenticator</name>
+  <summary>Fast, Zero-Knowledge 2FA &amp; TOTP Authenticator</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="com.github.riyazalsodie">
+    <name>R ! Y 4 Z</name>
+  </developer>
+  <url type="homepage">https://github.com/riyazalsodie/RYZ-Authenticator</url>
+  <url type="bugtracker">https://github.com/riyazalsodie/RYZ-Authenticator/issues</url>
+  <url type="vcs-browser">https://github.com/riyazalsodie/RYZ-Authenticator</url>
+  <description>
+    <p>
+      RYZ Authenticator is a native, ultra-lightweight (~30 MB RAM), zero-knowledge Two-Factor Authentication (2FA)
+      application built in Rust and Tauri 2.0. It encrypts all TOTP and HOTP secrets using XChaCha20-Poly1305 and Argon2id,
+      supports live webcam/phone QR scanning, 1-step Google Authenticator migration import, and encrypted offline backups.
+    </p>
+  </description>
+  <launchable type="desktop-id">ryz-authenticator.desktop</launchable>
+  <provides>
+    <binary>ryz-authenticator</binary>
+  </provides>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="1.1.0" date="2026-11-04">
+      <description>
+        <p>Multi-platform live camera QR scanner, Base32 secret validator, brute-force protection, and E2EE cloud sync.</p>
+      </description>
+    </release>
+  </releases>
+</component>
