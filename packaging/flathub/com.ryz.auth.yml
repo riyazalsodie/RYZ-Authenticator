@@ -22,7 +22,7 @@ modules:
     sources:
       - type: file
         url: https://github.com/riyazalsodie/RYZ-Authenticator/releases/download/v1.1.0/RYZ.Auth_1.1.0_amd64.deb
-        sha256: c9f3ae421456374616f12bf7d5f7066dd92374e6ef6082b65960e915f79876de
+        sha256: fa63bc1f0760c0e04b994956a0d09b1f345a69b6501dfd952417b5c733ba78e9
         only-arches:
           - x86_64
       - type: file

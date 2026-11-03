@@ -56,3 +56,56 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+  release-android:
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK & NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK 28
+        run: |
+          sdkmanager --install "ndk;28.0.13004108" "platforms;android-35" "build-tools;35.0.0"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/28.0.13004108" >> $GITHUB_ENV
+
+      - name: Install Rust Stable (Android Targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Install NPM Dependencies
+        run: npm ci
+
+      - name: Build & Sign Universal Android APK
+        run: |
+          npx tauri android build --apk
+          keytool -genkey -v -keystore release-debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          UNSIGNED_APK="src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk"
+          VERSION=$(node -p "require('./package.json').version")
+          ALIGNED_APK="src-tauri/gen/android/app/build/outputs/apk/universal/release/app-aligned.apk"
+          SIGNED_APK="RYZ.Auth_${VERSION}_universal.apk"
+          $ANDROID_HOME/build-tools/35.0.0/zipalign -v -p 4 "$UNSIGNED_APK" "$ALIGNED_APK"
+          $ANDROID_HOME/build-tools/35.0.0/apksigner sign --ks release-debug.keystore --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out "$SIGNED_APK" "$ALIGNED_APK"
+
+      - name: Upload Android APK to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          gh release upload "v${VERSION}" "RYZ.Auth_${VERSION}_universal.apk" --clobber
