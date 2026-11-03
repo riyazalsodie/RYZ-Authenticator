@@ -35,12 +35,45 @@ pub async fn register_user(
     state: State<'_, SafeVaultState>,
 ) -> Result<UserProfile, String> {
     let profile = db.create_user(&username, &email, &password).await?;
-    
-    // Auto initialize vault session with master password derived from user's secret
-    let mut vault = state.lock().map_err(|e| e.to_string())?;
-    let _ = vault.initialize_new_vault(&password);
-    vault.current_user = Some(profile.clone());
-    
+
+    let (crypto_to_upload, accounts_to_upload) = {
+        let mut vault = state.lock().map_err(|e| e.to_string())?;
+        vault.current_user = Some(profile.clone());
+
+        if vault.vault_exists() {
+            if vault.unlock_with_password(&password).is_err() {
+                let _ = vault.initialize_new_vault(&password);
+            }
+        } else {
+            let _ = vault.initialize_new_vault(&password);
+        }
+
+        if let Some(header) = vault.header.as_mut() {
+            header.user = Some(profile.clone());
+        }
+        let _ = vault.save_to_disk();
+
+        let crypto = vault
+            .header
+            .as_ref()
+            .zip(vault.master_key)
+            .map(|(h, k)| (h.salt.clone(), k));
+        let accs = vault
+            .header
+            .as_ref()
+            .map(|h| h.accounts.clone())
+            .unwrap_or_default();
+        (crypto, accs)
+    };
+
+    if let Some((salt, key)) = crypto_to_upload {
+        let _ = db.update_user_crypto(&profile.id, &salt, &key).await;
+    }
+
+    for acc in accounts_to_upload {
+        let _ = db.save_vault_account(&profile.id, &acc).await;
+    }
+
     if remember_me.unwrap_or(false) {
         let _ = save_remembered_session(&username, &password);
     } else {
@@ -59,20 +92,46 @@ pub async fn login_user(
     state: State<'_, SafeVaultState>,
 ) -> Result<UserProfile, String> {
     let profile = db.login_user(&identifier, &password).await?;
+    let (db_salt, db_key) = db.get_user_crypto(&profile.id).await.unwrap_or((None, None));
     let db_accounts = db.load_vault_accounts(&profile.id).await.unwrap_or_default();
 
-    let to_upload = {
+    let (to_upload, crypto_to_upload) = {
         let mut vault = state.lock().map_err(|e| e.to_string())?;
+        vault.current_user = Some(profile.clone());
+
         if vault.vault_exists() {
             let _ = vault.unlock_with_password(&password);
         } else {
-            let _ = vault.initialize_new_vault(&password);
+            let _ = vault.initialize_new_vault_with_salt(&password, db_salt.clone());
         }
 
+        let _ = vault.sync_crypto_with_cloud(
+            &password,
+            db_salt.as_deref(),
+            db_key.as_deref(),
+        );
+
         let mut unuploaded = Vec::new();
+        let mut local_crypto_for_cloud = None;
+        let master_key_copy = vault.master_key;
+
         if let Some(header) = vault.header.as_mut() {
+            header.user = Some(profile.clone());
+
+            if (db_salt.is_none() || db_key.is_none()) && !header.salt.is_empty() {
+                if let Some(k) = master_key_copy {
+                    local_crypto_for_cloud = Some((header.salt.clone(), k));
+                }
+            }
+
             for acc in db_accounts.iter() {
-                if !header.accounts.iter().any(|a| a.id == acc.id) {
+                if let Some(existing) = header.accounts.iter_mut().find(|a| a.id == acc.id) {
+                    if acc.updated_at > existing.updated_at {
+                        *existing = acc.clone();
+                    } else if existing.updated_at > acc.updated_at {
+                        unuploaded.push(existing.clone());
+                    }
+                } else {
                     header.accounts.push(acc.clone());
                 }
             }
@@ -83,10 +142,14 @@ pub async fn login_user(
             }
         }
 
-        vault.current_user = Some(profile.clone());
         vault.is_unlocked = true;
-        unuploaded
+        let _ = vault.save_to_disk();
+        (unuploaded, local_crypto_for_cloud)
     };
+
+    if let Some((salt, key)) = crypto_to_upload {
+        let _ = db.update_user_crypto(&profile.id, &salt, &key).await;
+    }
 
     for acc in to_upload {
         let _ = db.save_vault_account(&profile.id, &acc).await;
@@ -111,10 +174,14 @@ pub async fn try_auto_login(
         _ => return Ok(None),
     };
 
-    match login_user(session.identifier.clone(), session.password.clone(), Some(true), db, state).await {
+    match login_user(session.identifier.clone(), session.password.clone(), Some(true), db, state.clone()).await {
         Ok(profile) => Ok(Some(profile)),
         Err(_) => {
-            clear_remembered_session();
+            // Offline fallback: if cloud DB is temporarily unreachable, unlock local vault with remembered session
+            let mut vault = state.lock().map_err(|e| e.to_string())?;
+            if vault.vault_exists() && vault.unlock_with_password(&session.password).is_ok() {
+                return Ok(vault.current_user.clone());
+            }
             Ok(None)
         }
     }
@@ -133,6 +200,11 @@ pub async fn sync_vault_to_database(
         (user.id.clone(), header.accounts.clone())
     };
 
+    // Rate-limit / debounce rapid duplicate sync bursts within 800ms
+    if !db.should_allow_sync(&format!("push:{}", user_id), 800).await {
+        return Ok(accounts.len());
+    }
+
     let count = accounts.len();
     for acc in &accounts {
         db.save_vault_account(&user_id, acc).await?;
@@ -146,17 +218,30 @@ pub async fn sync_vault_from_database(
     db: State<'_, SafeDatabaseState>,
     state: State<'_, SafeVaultState>,
 ) -> Result<usize, String> {
-    let user_id = {
+    let profile = {
         let vault = state.lock().map_err(|e| e.to_string())?;
-        let user = vault.current_user.as_ref().ok_or("User not logged in")?;
-        user.id.clone()
-    };
+        vault.current_user.clone()
+    }.ok_or("User not logged in. Cloud synchronization requires an active authenticated session.")?;
 
-    let accounts = db.load_vault_accounts(&user_id).await?;
+    // Rate-limit / debounce rapid duplicate pull bursts within 800ms
+    if !db.should_allow_sync(&format!("pull:{}", profile.id), 800).await {
+        return Ok(0);
+    }
+
+    let (db_salt, db_key) = db.get_user_crypto(&profile.id).await.unwrap_or((None, None));
+    let accounts = db.load_vault_accounts(&profile.id).await?;
     let mut count = 0;
 
     let mut vault = state.lock().map_err(|e| e.to_string())?;
+    vault.current_user = Some(profile.clone());
+    if let Some(ref ck) = db_key {
+        if ck.len() == 32 {
+            let _ = vault.sync_crypto_with_cloud("", db_salt.as_deref(), Some(ck));
+        }
+    }
+
     if let Some(header) = vault.header.as_mut() {
+        header.user = Some(profile);
         for acc in accounts {
             if let Some(existing) = header.accounts.iter_mut().find(|a| a.id == acc.id) {
                 if acc.updated_at > existing.updated_at {
@@ -169,6 +254,7 @@ pub async fn sync_vault_from_database(
             }
         }
     }
+    let _ = vault.save_to_disk();
 
     Ok(count)
 }
@@ -178,6 +264,10 @@ pub fn logout_user(state: State<'_, SafeVaultState>) -> Result<(), String> {
     let mut vault = state.lock().map_err(|e| e.to_string())?;
     vault.lock();
     vault.current_user = None;
+    if let Some(header) = vault.header.as_mut() {
+        header.user = None;
+    }
+    let _ = vault.save_to_disk();
     clear_remembered_session();
     Ok(())
 }
@@ -195,9 +285,67 @@ pub fn unlock_vault(password: String, state: State<'_, SafeVaultState>) -> Resul
 }
 
 #[tauri::command]
-pub fn unlock_with_windows_hello(state: State<'_, SafeVaultState>) -> Result<(), String> {
-    let mut vault = state.lock().map_err(|e| e.to_string())?;
-    vault.unlock_with_dpapi()
+pub async fn unlock_with_windows_hello(
+    db: State<'_, SafeDatabaseState>,
+    state: State<'_, SafeVaultState>,
+) -> Result<(), String> {
+    let user_profile = {
+        let mut vault = state.lock().map_err(|e| e.to_string())?;
+        if !vault.vault_exists() {
+            return Err("No local vault found on this device. Please create or sign in with your master account first.".to_string());
+        }
+        vault.unlock_with_dpapi()?;
+        vault.current_user.clone()
+    };
+
+    if let Some(profile) = user_profile {
+        let (db_salt, db_key) = db.get_user_crypto(&profile.id).await.unwrap_or((None, None));
+        if let Ok(db_accounts) = db.load_vault_accounts(&profile.id).await {
+            let mut to_upload = Vec::new();
+            {
+                if let Ok(mut vault) = state.lock() {
+                    vault.current_user = Some(profile.clone());
+                    if let Some(ref ck) = db_key {
+                        if ck.len() == 32 {
+                            let _ = vault.sync_crypto_with_cloud("", db_salt.as_deref(), Some(ck));
+                        }
+                    }
+                    if let Some(header) = vault.header.as_mut() {
+                        header.user = Some(profile.clone());
+                        let local_accounts = header.accounts.clone();
+                        for acc in db_accounts.iter() {
+                            if let Some(existing) = header.accounts.iter_mut().find(|a| a.id == acc.id) {
+                                if acc.updated_at > existing.updated_at {
+                                    *existing = acc.clone();
+                                } else if existing.updated_at > acc.updated_at {
+                                    to_upload.push(existing.clone());
+                                }
+                            } else {
+                                header.accounts.push(acc.clone());
+                            }
+                        }
+                        for acc in local_accounts.iter() {
+                            if !db_accounts.iter().any(|a| a.id == acc.id) {
+                                to_upload.push(acc.clone());
+                            }
+                        }
+                    }
+                    let _ = vault.save_to_disk();
+                }
+            }
+            for acc in to_upload {
+                let _ = db.save_vault_account(&profile.id, &acc).await;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn clear_clipboard(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    app.clipboard().write_text("").map_err(|e| e.to_string())
 }
 
 #[tauri::command]

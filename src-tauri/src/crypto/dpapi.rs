@@ -247,7 +247,17 @@ fn get_session_file_path() -> Result<PathBuf, String> {
         Ok(dir)
     }
 
-    #[cfg(not(any(windows, target_os = "macos")))]
+    #[cfg(target_os = "android")]
+    {
+        let mut dir = PathBuf::from("/data/data/com.ryz.auth/files");
+        if !dir.exists() {
+            let _ = fs::create_dir_all(&dir);
+        }
+        dir.push("secure_session.dat");
+        Ok(dir)
+    }
+
+    #[cfg(not(any(windows, target_os = "macos", target_os = "android")))]
     {
         let base = if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
             PathBuf::from(xdg)

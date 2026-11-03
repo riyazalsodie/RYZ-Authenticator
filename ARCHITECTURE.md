@@ -1,8 +1,8 @@
 # RYZ Auth — Enterprise-Grade Architecture & Security Specification
 
-**Version:** 1.0.0-PROD-SPEC  
-**Author:** Principal Security Engineer & Tauri Architect  
-**Classification:** Open Architecture / Enterprise Cryptographic Standard  
+**Version:** 1.1.0  
+**Author:** R ! Y 4 Z  
+**Classification:** Open Architecture / Zero-Knowledge Cryptographic Standard  
 **Target Environment:** Windows 10/11 (x86_64, aarch64), Linux (Wayland/X11), macOS (Apple Silicon / Intel)
 
 ---

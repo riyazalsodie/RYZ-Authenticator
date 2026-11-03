@@ -8,11 +8,16 @@ import {
   faKey,
   faTag,
   faUser,
+  faEye,
+  faEyeSlash,
+  faCircleCheck,
+  faTriangleExclamation,
 } from '@fortawesome/free-solid-svg-icons';
 import { ActiveAccount, Algorithm, DEFAULT_GROUPS } from '../types';
 import { BrandIcon, POPULAR_PRESETS } from './BrandIcon';
 import { CustomDropdown } from './CustomDropdown';
 import { isMobile } from '../utils/platform';
+import { validateBase32Secret } from '../utils/security';
 
 interface EditAccountModalProps {
   isOpen: boolean;
@@ -47,6 +52,7 @@ export const EditAccountModal: React.FC<EditAccountModalProps> = ({
   const [selectedGroup, setSelectedGroup] = useState<string>('');
   const [isAddingNewGroup, setIsAddingNewGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
+  const [showSecret, setShowSecret] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -76,6 +82,16 @@ export const EditAccountModal: React.FC<EditAccountModalProps> = ({
       return;
     }
 
+    let cleanedSecret: string | undefined = undefined;
+    if (newSecret.trim()) {
+      const validation = validateBase32Secret(newSecret);
+      if (!validation.valid) {
+        setError(validation.error || 'Invalid Base32 secret key.');
+        return;
+      }
+      cleanedSecret = validation.cleanSecret;
+    }
+
     setLoading(true);
     try {
       const effectiveGroup = selectedGroup.trim() || null;
@@ -83,7 +99,7 @@ export const EditAccountModal: React.FC<EditAccountModalProps> = ({
         id: account.id,
         issuer: issuer.trim(),
         label: label.trim(),
-        new_secret: newSecret.trim() ? newSecret.trim() : undefined,
+        new_secret: cleanedSecret,
         algorithm,
         digits,
         period,
@@ -98,12 +114,10 @@ export const EditAccountModal: React.FC<EditAccountModalProps> = ({
   };
 
   return (
-    <div className={`absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in overflow-hidden ${
+    <div className={`fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fade-in ${
       isMobile() ? 'rounded-none' : 'rounded-2xl'
     }`}>
-      <div className={`relative w-full max-w-lg bg-[#030504] border border-[#00FF88]/20 shadow-[0_0_50px_rgba(0,255,136,0.12)] p-6 overflow-hidden ${
-        isMobile() ? 'rounded-none' : 'rounded-2xl'
-      }`}>
+      <div className={`relative w-full max-w-lg max-h-[90vh] overflow-y-auto bg-[#030504] border border-[#00FF88]/20 shadow-[0_0_50px_rgba(0,255,136,0.12)] p-4 sm:p-6 rounded-2xl`}>
         {/* Neon accent corner glows */}
         <div className="absolute top-0 right-0 w-32 h-32 bg-[#00FF88]/5 rounded-full blur-2xl pointer-events-none" />
         <div className="absolute bottom-0 left-0 w-32 h-32 bg-[#10B981]/5 rounded-full blur-2xl pointer-events-none" />
@@ -136,12 +150,12 @@ export const EditAccountModal: React.FC<EditAccountModalProps> = ({
             </div>
           )}
 
-          {/* Quick Service Presets Switcher */}
+          {/* Quick Service & Icon Presets Switcher */}
           <div>
             <label className="block text-[10px] font-semibold text-neutral-400 mb-1.5 uppercase tracking-wider">
-              Service Presets
+              Select Account Icon / Service Preset (Rockstar Games & 30+ More)
             </label>
-            <div className="grid grid-cols-4 gap-1.5 max-h-28 overflow-y-auto pr-1">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 max-h-28 overflow-y-auto pr-1">
               {POPULAR_PRESETS.map((preset) => {
                 const isSelected = issuer.toLowerCase() === preset.name.toLowerCase();
                 return (
@@ -168,7 +182,7 @@ export const EditAccountModal: React.FC<EditAccountModalProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 pt-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
             <div>
               <label className="block text-xs font-medium text-neutral-300 mb-1.5">
                 Service / Issuer
@@ -206,20 +220,49 @@ export const EditAccountModal: React.FC<EditAccountModalProps> = ({
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="block text-xs font-medium text-neutral-300">
-                Rotate Secret Key (Optional)
+                Rotate Secret Key (Optional Base32)
               </label>
-              <span className="text-[11px] text-neutral-500">Leave blank to keep current secret</span>
+              {newSecret.trim() ? (
+                <span className={`text-[10px] font-medium flex items-center space-x-1 ${
+                  validateBase32Secret(newSecret).valid ? 'text-[#00FF88]' : 'text-red-400'
+                }`}>
+                  <FontAwesomeIcon icon={validateBase32Secret(newSecret).valid ? faCircleCheck : faTriangleExclamation} className="w-3 h-3 mr-1" />
+                  {validateBase32Secret(newSecret).valid ? `Valid (${validateBase32Secret(newSecret).charCount} chars)` : 'Invalid'}
+                </span>
+              ) : (
+                <span className="text-[11px] text-neutral-500">Leave blank to keep current secret</span>
+              )}
             </div>
             <div className="group flex items-center h-[46px] bg-[#050806] border border-white/10 rounded-xl px-3.5 focus-within:border-[#00FF88] focus-within:ring-2 focus-within:ring-[#00FF88]/20 focus-within:shadow-[0_0_20px_rgba(0,255,136,0.18)] transition-all">
               <FontAwesomeIcon icon={faKey} className="w-4 h-4 text-neutral-500 group-focus-within:text-[#00FF88] transition-colors shrink-0 mr-2.5" />
               <input
-                type="text"
+                type={showSecret ? "text" : "password"}
                 value={newSecret}
                 onChange={(e) => setNewSecret(e.target.value)}
                 placeholder="Enter new Base32 secret (e.g. JBSWY3DPEHPK3PXP)"
                 className="w-full bg-transparent font-mono text-sm text-white placeholder-neutral-500 focus:outline-none tracking-wider uppercase"
+                autoComplete="off"
+                spellCheck={false}
               />
+              <button
+                type="button"
+                onClick={() => setShowSecret(!showSecret)}
+                className="ml-2 text-neutral-500 hover:text-white transition-colors p-1"
+                title={showSecret ? "Mask Secret" : "Reveal Secret"}
+              >
+                <FontAwesomeIcon icon={showSecret ? faEyeSlash : faEye} className="w-3.5 h-3.5" />
+              </button>
             </div>
+            {newSecret.trim() && !validateBase32Secret(newSecret).valid && (
+              <p className="text-[11px] text-red-400 mt-1 flex items-start space-x-1">
+                <span>{validateBase32Secret(newSecret).error}</span>
+              </p>
+            )}
+            {newSecret.trim() && validateBase32Secret(newSecret).valid && validateBase32Secret(newSecret).warning && (
+              <p className="text-[11px] text-amber-400 mt-1 flex items-start space-x-1">
+                <span>{validateBase32Secret(newSecret).warning}</span>
+              </p>
+            )}
           </div>
 
           {/* Cryptographic Parameters */}

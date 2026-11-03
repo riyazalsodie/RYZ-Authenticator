@@ -52,6 +52,11 @@ export const TitleBar: React.FC = () => {
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/i.test(navigator.userAgent);
   const isMobile = typeof navigator !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
+  // On mobile devices, native system status bar is used instead of a desktop window titlebar
+  if (isMobile) {
+    return null;
+  }
+
   return (
     <div
       data-tauri-drag-region

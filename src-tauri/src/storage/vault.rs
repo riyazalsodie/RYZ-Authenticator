@@ -54,6 +54,8 @@ pub struct VaultHeader {
     pub dpapi_wrapped_verifier: Option<Vec<u8>>,
     pub accounts: Vec<AccountRecord>,
     pub settings: Option<VaultSettings>,
+    #[serde(default)]
+    pub user: Option<crate::storage::db::UserProfile>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,12 +79,16 @@ pub struct VaultStorage {
 impl VaultStorage {
     pub fn new(app_dir: PathBuf) -> Self {
         let vault_file = app_dir.join("ryz_vault.bin");
+        let cached_user = fs::read(&vault_file)
+            .ok()
+            .and_then(|raw| serde_json::from_slice::<VaultHeader>(&raw).ok())
+            .and_then(|h| h.user);
         Self {
             vault_file,
             master_key: None,
             header: None,
             is_unlocked: false,
-            current_user: None,
+            current_user: cached_user,
         }
     }
 
@@ -94,18 +100,39 @@ impl VaultStorage {
 
     /// Initializes a brand new vault with master password
     pub fn initialize_new_vault(&mut self, password: &str) -> Result<(), String> {
-        let salt = generate_salt();
-        let derived = derive_master_key(password, &salt)?;
+        self.initialize_new_vault_with_salt(password, None)
+    }
+
+    /// Initializes a vault with master password and optional pre-existing cloud salt
+    pub fn initialize_new_vault_with_salt(
+        &mut self,
+        password: &str,
+        custom_salt: Option<Vec<u8>>,
+    ) -> Result<(), String> {
+        let salt_vec = custom_salt.unwrap_or_else(|| generate_salt().to_vec());
+        let derived = derive_master_key(password, &salt_vec)?;
 
         // Wrap master verification token with DPAPI for fast biometric/local unlocking
         let dpapi_wrapped = dpapi_protect(&derived.0).ok();
 
+        let existing_accounts = self
+            .header
+            .as_ref()
+            .map(|h| h.accounts.clone())
+            .unwrap_or_default();
+        let existing_settings = self
+            .header
+            .as_ref()
+            .and_then(|h| h.settings.clone())
+            .or_else(|| Some(VaultSettings::default()));
+
         let header = VaultHeader {
             version: 1,
-            salt: salt.to_vec(),
+            salt: salt_vec,
             dpapi_wrapped_verifier: dpapi_wrapped,
-            accounts: Vec::new(),
-            settings: Some(VaultSettings::default()),
+            accounts: existing_accounts,
+            settings: existing_settings,
+            user: self.current_user.clone(),
         };
 
         self.master_key = Some(derived.0);
@@ -129,12 +156,64 @@ impl VaultStorage {
 
         let derived = derive_master_key(password, &header.salt)?;
 
-        // Verify key by checking if we have any encrypted records or verify against DPAPI
+        if self.current_user.is_none() {
+            self.current_user = header.user.clone();
+        }
         self.master_key = Some(derived.0);
         self.header = Some(header);
         self.is_unlocked = true;
 
         Ok(())
+    }
+
+    /// Synchronizes local vault salt and master key with cloud salt/key, re-encrypting any local-only records
+    pub fn sync_crypto_with_cloud(
+        &mut self,
+        password: &str,
+        cloud_salt: Option<&[u8]>,
+        cloud_key: Option<&[u8]>,
+    ) -> Result<(), String> {
+        let target_salt = cloud_salt
+            .map(|s| s.to_vec())
+            .or_else(|| self.header.as_ref().map(|h| h.salt.clone()))
+            .unwrap_or_else(|| generate_salt().to_vec());
+
+        let new_key_bytes: [u8; 32] = if let Some(ck) = cloud_key {
+            if ck.len() == 32 {
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(ck);
+                arr
+            } else {
+                derive_master_key(password, &target_salt)?.0
+            }
+        } else {
+            derive_master_key(password, &target_salt)?.0
+        };
+
+        let old_key = self.master_key;
+
+        if let Some(header) = self.header.as_mut() {
+            let mut valid_accounts = Vec::new();
+            for mut acc in header.accounts.drain(..) {
+                if decrypt_envelope(&new_key_bytes, &acc.encrypted_secret).is_ok() {
+                    valid_accounts.push(acc);
+                } else if let Some(ref ok) = old_key {
+                    if let Ok(plain) = decrypt_envelope(ok, &acc.encrypted_secret) {
+                        if let Ok(re_enc) = encrypt_envelope(&new_key_bytes, &plain.0) {
+                            acc.encrypted_secret = re_enc;
+                            valid_accounts.push(acc);
+                        }
+                    }
+                }
+            }
+            header.accounts = valid_accounts;
+            header.salt = target_salt;
+            header.dpapi_wrapped_verifier = dpapi_protect(&new_key_bytes).ok();
+        }
+
+        self.master_key = Some(new_key_bytes);
+        self.is_unlocked = true;
+        self.save_to_disk()
     }
 
     /// Unlocks vault automatically via Windows DPAPI local credentials
@@ -154,6 +233,9 @@ impl VaultStorage {
             if unwrapped.len() == 32 {
                 let mut key = [0u8; 32];
                 key.copy_from_slice(&unwrapped);
+                if self.current_user.is_none() {
+                    self.current_user = header.user.clone();
+                }
                 self.master_key = Some(key);
                 self.header = Some(header);
                 self.is_unlocked = true;
@@ -322,11 +404,16 @@ impl VaultStorage {
         let mut results = Vec::new();
 
         for acc in &header.accounts {
-            let decrypted = decrypt_envelope(key, &acc.encrypted_secret)?;
-            let secret_str = std::str::from_utf8(&decrypted.0)
-                .map_err(|e| format!("UTF-8 decode failure: {}", e))?;
+            let Ok(decrypted) = decrypt_envelope(key, &acc.encrypted_secret) else {
+                continue;
+            };
+            let Ok(secret_str) = std::str::from_utf8(&decrypted.0) else {
+                continue;
+            };
 
-            let secret_buf = OtpEngine::decode_secret(secret_str)?;
+            let Ok(secret_buf) = OtpEngine::decode_secret(secret_str) else {
+                continue;
+            };
             let config = TotpConfig {
                 algorithm: acc.algorithm,
                 digits: acc.digits,
@@ -334,10 +421,15 @@ impl VaultStorage {
             };
 
             let (code, remaining) = if acc.is_hotp {
-                let c = OtpEngine::compute_hotp(&secret_buf, acc.counter, &config)?;
+                let Ok(c) = OtpEngine::compute_hotp(&secret_buf, acc.counter, &config) else {
+                    continue;
+                };
                 (c, 0)
             } else {
-                OtpEngine::compute_current_totp(&secret_buf, &config)?
+                let Ok(res) = OtpEngine::compute_current_totp(&secret_buf, &config) else {
+                    continue;
+                };
+                res
             };
 
             results.push(ActiveCodeDTO {
@@ -435,7 +527,7 @@ impl VaultStorage {
         }
     }
 
-    fn save_to_disk(&self) -> Result<(), String> {
+    pub fn save_to_disk(&self) -> Result<(), String> {
         if let Some(header) = &self.header {
             if let Some(parent) = self.vault_file.parent() {
                 let _ = fs::create_dir_all(parent);

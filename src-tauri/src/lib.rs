@@ -25,11 +25,11 @@ pub fn run() {
                 .app_data_dir()
                 .expect("Failed to resolve app data directory");
 
-            let vault = VaultStorage::new(app_dir);
+            let vault = VaultStorage::new(app_dir.clone());
             let state: SafeVaultState = Arc::new(Mutex::new(vault));
             app.manage(state);
 
-            let db = Arc::new(storage::db::Database::new(None));
+            let db = Arc::new(storage::db::Database::new(None, Some(app_dir)));
             let db_clone = db.clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = db_clone.connect().await {
@@ -127,6 +127,7 @@ pub fn run() {
             commands::export_vault_dialog,
             commands::import_vault_dialog,
             commands::import_google_migration_url,
+            commands::clear_clipboard,
             commands::minimize_window,
             commands::toggle_maximize_window,
             commands::close_window,

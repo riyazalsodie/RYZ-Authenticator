@@ -12,8 +12,13 @@ import {
   faCircleCheck,
   faCircleExclamation,
   faFingerprint,
+  faUser,
+  faLock,
+  faRightFromBracket,
+  faCloud,
 } from '@fortawesome/free-solid-svg-icons';
 import { CustomDropdown } from './CustomDropdown';
+import { UserProfile } from '../types';
 import {
   getAutostartInfo,
   getProtectionStatus,
@@ -28,7 +33,19 @@ export interface VaultSettings {
   clipboard_clear_seconds: number;
 }
 
-export const SettingsScreen: React.FC = () => {
+interface SettingsScreenProps {
+  currentUser?: UserProfile | null;
+  onSync?: () => Promise<void>;
+  onLock?: () => void;
+  onLogout?: () => void;
+  isSyncing?: boolean;
+}
+
+export const SettingsScreen: React.FC<SettingsScreenProps> = ({
+  currentUser,
+  onLock,
+  onLogout,
+}) => {
   const [settings, setSettings] = useState<VaultSettings>({
     autostart: false,
     minimize_to_tray: true,
@@ -66,6 +83,7 @@ export const SettingsScreen: React.FC = () => {
 
   const showNotification = (msg: string) => {
     setSavedMessage(msg);
+    setErrorMessage(null);
     setTimeout(() => setSavedMessage(null), 3000);
   };
 
@@ -97,14 +115,20 @@ export const SettingsScreen: React.FC = () => {
     }
   };
 
+  const mobileMode = isMobile();
+
   return (
-    <div className="flex-1 overflow-y-auto p-8 max-w-3xl mx-auto space-y-6 text-neutral-200">
+    <div
+      className={`flex-1 overflow-y-auto px-4 sm:px-8 pb-28 md:pb-8 max-w-3xl w-full mx-auto space-y-5 text-neutral-200 ${
+        mobileMode ? 'pt-[max(env(safe-area-inset-top),2.25rem)]' : 'pt-6 sm:pt-8'
+      }`}
+    >
       <div>
-        <h2 className="text-lg font-bold text-white tracking-wide flex items-center space-x-2">
+        <h2 className="text-base sm:text-lg font-bold text-white tracking-wide flex items-center space-x-2">
           <span>APPLICATION & SECURITY SETTINGS</span>
         </h2>
         <p className="text-xs text-neutral-500 mt-1">
-          Configure native system integration, autostart, and backup parameters.
+          Configure cloud synchronization, system behavior, and encrypted backup parameters.
         </p>
       </div>
 
@@ -122,16 +146,63 @@ export const SettingsScreen: React.FC = () => {
         </div>
       )}
 
+      {/* Account & Cloud Synchronization Section */}
+      <section className="space-y-4 rounded-2xl bg-[#030504] p-4 sm:p-5 border border-[#00FF88]/15 shadow-[0_0_30px_rgba(0,255,136,0.05)]">
+        <h3 className="text-xs font-bold text-neutral-300 uppercase tracking-wider flex items-center space-x-2">
+          <FontAwesomeIcon icon={faCloud} className="w-3.5 h-3.5 text-[#00FF88]" />
+          <span>Account & Cloud Synchronization</span>
+        </h3>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-2 border-b border-white/5">
+          <div className="flex items-center space-x-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-[#00FF88]/10 border border-[#00FF88]/25 flex items-center justify-center text-[#00FF88] shrink-0">
+              <FontAwesomeIcon icon={faUser} className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-white truncate">
+                {currentUser ? currentUser.username : 'Local Vault Session'}
+              </p>
+              <p className="text-xs text-neutral-400 truncate">
+                {currentUser ? currentUser.email : 'Sign in to enable PostgreSQL cloud sync'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {onLock && (
+              <button
+                type="button"
+                onClick={onLock}
+                className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-neutral-200 transition-all cursor-pointer"
+              >
+                <FontAwesomeIcon icon={faLock} className="w-3.5 h-3.5 text-neutral-400" />
+                <span>Lock</span>
+              </button>
+            )}
+            {onLogout && (
+              <button
+                type="button"
+                onClick={onLogout}
+                className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-xs font-semibold text-red-400 transition-all cursor-pointer"
+              >
+                <FontAwesomeIcon icon={faRightFromBracket} className="w-3.5 h-3.5" />
+                <span>Sign Out</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
+
       {/* System Integration Section */}
-      <section className="space-y-4 rounded-2xl bg-[#030504] p-5 border border-[#00FF88]/15 shadow-[0_0_30px_rgba(0,255,136,0.05)]">
+      <section className="space-y-4 rounded-2xl bg-[#030504] p-4 sm:p-5 border border-[#00FF88]/15 shadow-[0_0_30px_rgba(0,255,136,0.05)]">
         <h3 className="text-xs font-bold text-neutral-300 uppercase tracking-wider flex items-center space-x-2">
           <FontAwesomeIcon icon={faDesktop} className="w-3.5 h-3.5 text-[#00FF88]" />
-          <span>System & Window Behavior</span>
+          <span>System & Session Behavior</span>
         </h3>
 
         {/* Platform-Adaptive Autostart / Launch */}
         {getAutostartInfo().supported && (
-          <div className="flex items-center justify-between py-2 border-b border-white/5">
+          <div className="flex items-center justify-between gap-4 py-2 border-b border-white/5">
             <div>
               <div className="text-xs font-semibold text-white flex items-center space-x-2">
                 <FontAwesomeIcon icon={faPowerOff} className="w-3.5 h-3.5 text-neutral-400" />
@@ -143,7 +214,7 @@ export const SettingsScreen: React.FC = () => {
             </div>
             <button
               onClick={() => updateSetting('autostart', !settings.autostart)}
-              className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-200 focus:outline-none ${
+              className={`w-11 h-6 shrink-0 flex items-center rounded-full p-1 transition-colors duration-200 focus:outline-none ${
                 settings.autostart ? 'bg-[#00FF88]' : 'bg-neutral-800'
               }`}
             >
@@ -157,10 +228,10 @@ export const SettingsScreen: React.FC = () => {
         )}
 
         {/* Desktop System Tray Controls */}
-        {!isMobile() && (
+        {!mobileMode && (
           <>
             {/* Minimize to Tray */}
-            <div className="flex items-center justify-between py-2 border-b border-white/5">
+            <div className="flex items-center justify-between gap-4 py-2 border-b border-white/5">
               <div>
                 <div className="text-xs font-semibold text-white">Minimize to System Tray</div>
                 <p className="text-[11px] text-neutral-500 mt-0.5">
@@ -169,7 +240,7 @@ export const SettingsScreen: React.FC = () => {
               </div>
               <button
                 onClick={() => updateSetting('minimize_to_tray', !settings.minimize_to_tray)}
-                className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-200 focus:outline-none ${
+                className={`w-11 h-6 shrink-0 flex items-center rounded-full p-1 transition-colors duration-200 focus:outline-none ${
                   settings.minimize_to_tray ? 'bg-[#00FF88]' : 'bg-neutral-800'
                 }`}
               >
@@ -182,7 +253,7 @@ export const SettingsScreen: React.FC = () => {
             </div>
 
             {/* Close to Tray */}
-            <div className="flex items-center justify-between py-2 border-b border-white/5">
+            <div className="flex items-center justify-between gap-4 py-2 border-b border-white/5">
               <div>
                 <div className="text-xs font-semibold text-white">Close to System Tray</div>
                 <p className="text-[11px] text-neutral-500 mt-0.5">
@@ -191,7 +262,7 @@ export const SettingsScreen: React.FC = () => {
               </div>
               <button
                 onClick={() => updateSetting('close_to_tray', !settings.close_to_tray)}
-                className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-200 focus:outline-none ${
+                className={`w-11 h-6 shrink-0 flex items-center rounded-full p-1 transition-colors duration-200 focus:outline-none ${
                   settings.close_to_tray ? 'bg-[#00FF88]' : 'bg-neutral-800'
                 }`}
               >
@@ -206,7 +277,7 @@ export const SettingsScreen: React.FC = () => {
         )}
 
         {/* Auto-Lock Timer */}
-        <div className="flex items-center justify-between py-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-2">
           <div>
             <div className="text-xs font-semibold text-white flex items-center space-x-2">
               <FontAwesomeIcon icon={faClock} className="w-3.5 h-3.5 text-neutral-400" />
@@ -216,7 +287,7 @@ export const SettingsScreen: React.FC = () => {
               Locks the vault and purges cryptographic keys from memory after inactivity.
             </p>
           </div>
-          <div className="w-48">
+          <div className="w-full sm:w-48 shrink-0">
             <CustomDropdown
               value={settings.auto_lock_minutes}
               onChange={(val) => updateSetting('auto_lock_minutes', Number(val))}
@@ -234,14 +305,14 @@ export const SettingsScreen: React.FC = () => {
       </section>
 
       {/* Security & Cryptography Section */}
-      <section className="space-y-4 rounded-2xl bg-[#030504] p-5 border border-[#00FF88]/15 shadow-[0_0_30px_rgba(0,255,136,0.05)]">
+      <section className="space-y-4 rounded-2xl bg-[#030504] p-4 sm:p-5 border border-[#00FF88]/15 shadow-[0_0_30px_rgba(0,255,136,0.05)]">
         <h3 className="text-xs font-bold text-neutral-300 uppercase tracking-wider flex items-center space-x-2">
           <FontAwesomeIcon icon={faShieldHalved} className="w-3.5 h-3.5 text-[#00FF88]" />
           <span>Security & Clipboard Protection</span>
         </h3>
 
         {/* Hardware / Biometric Protection Status */}
-        <div className="flex items-center justify-between py-2 border-b border-white/5">
+        <div className="flex items-center justify-between gap-3 py-2 border-b border-white/5">
           <div>
             <div className="text-xs font-semibold text-white flex items-center space-x-2">
               <FontAwesomeIcon icon={faFingerprint} className="w-3.5 h-3.5 text-[#00FF88]" />
@@ -251,13 +322,13 @@ export const SettingsScreen: React.FC = () => {
               {getProtectionStatus().description}
             </p>
           </div>
-          <span className="px-2.5 py-1 rounded-full bg-[#00FF88]/10 border border-[#00FF88]/30 text-[10px] font-semibold text-[#00FF88] shadow-[0_0_12px_rgba(0,255,136,0.15)]">
+          <span className="px-2.5 py-1 rounded-full bg-[#00FF88]/10 border border-[#00FF88]/30 text-[10px] font-semibold text-[#00FF88] shadow-[0_0_12px_rgba(0,255,136,0.15)] shrink-0">
             ENABLED
           </span>
         </div>
 
         {/* Clipboard Clear Timeout */}
-        <div className="flex items-center justify-between py-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-2">
           <div>
             <div className="text-xs font-semibold text-white flex items-center space-x-2">
               <FontAwesomeIcon icon={faClipboard} className="w-3.5 h-3.5 text-neutral-400" />
@@ -267,7 +338,7 @@ export const SettingsScreen: React.FC = () => {
               Automatically erases copied OTP codes from system clipboard.
             </p>
           </div>
-          <div className="w-48">
+          <div className="w-full sm:w-48 shrink-0">
             <CustomDropdown
               value={settings.clipboard_clear_seconds}
               onChange={(val) => updateSetting('clipboard_clear_seconds', Number(val))}
@@ -283,7 +354,7 @@ export const SettingsScreen: React.FC = () => {
       </section>
 
       {/* Encrypted Backup & Restore Section */}
-      <section className="space-y-4 rounded-2xl bg-[#030504] p-5 border border-[#00FF88]/15 shadow-[0_0_30px_rgba(0,255,136,0.05)]">
+      <section className="space-y-4 rounded-2xl bg-[#030504] p-4 sm:p-5 border border-[#00FF88]/15 shadow-[0_0_30px_rgba(0,255,136,0.05)]">
         <h3 className="text-xs font-bold text-neutral-300 uppercase tracking-wider flex items-center space-x-2">
           <FontAwesomeIcon icon={faDownload} className="w-3.5 h-3.5 text-[#00FF88]" />
           <span>Encrypted Vault Backup & Restore</span>
@@ -292,11 +363,11 @@ export const SettingsScreen: React.FC = () => {
           Backups are encrypted using <strong>XChaCha20-Poly1305</strong>. Plaintext secrets are never stored unencrypted in backups.
         </p>
 
-        <div className="flex items-center space-x-3 pt-2">
+        <div className="flex flex-wrap items-center gap-3 pt-2">
           <button
             onClick={handleExportBackup}
             disabled={loading}
-            className="flex items-center space-x-2 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-neutral-200 hover:border-[#00FF88]/40 transition-all hover:text-[#00FF88]"
+            className="flex items-center justify-center space-x-2 px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-neutral-200 hover:border-[#00FF88]/40 transition-all hover:text-[#00FF88] flex-1 sm:flex-initial cursor-pointer"
           >
             <FontAwesomeIcon icon={faDownload} className="w-3.5 h-3.5 text-[#00FF88]" />
             <span>Export Encrypted Vault</span>
@@ -305,7 +376,7 @@ export const SettingsScreen: React.FC = () => {
           <button
             onClick={handleImportBackup}
             disabled={loading}
-            className="flex items-center space-x-2 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-neutral-200 hover:border-[#00FF88]/40 transition-all hover:text-[#00FF88]"
+            className="flex items-center justify-center space-x-2 px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-neutral-200 hover:border-[#00FF88]/40 transition-all hover:text-[#00FF88] flex-1 sm:flex-initial cursor-pointer"
           >
             <FontAwesomeIcon icon={faUpload} className="w-3.5 h-3.5 text-neutral-400" />
             <span>Restore From Backup</span>

@@ -79,3 +79,112 @@ html, body, #root {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.12em;
 }
+
+/* Simple spring pop entry + smooth exit animation for Copied text & tick mark (no box) */
+@keyframes copyBadgeIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.7) translateY(3px);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.08) translateY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes copyBadgeOut {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0px);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.75) translateY(-4px);
+    filter: blur(2px);
+  }
+}
+
+@keyframes tickMarkPop {
+  0% {
+    opacity: 0;
+    transform: scale(0.35) rotate(-25deg);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.25) rotate(6deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+.animate-copy-in {
+  animation: copyBadgeIn 0.25s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.animate-copy-out {
+  animation: copyBadgeOut 0.25s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+.animate-tick-pop {
+  animation: tickMarkPop 0.28s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Telegram-style shatter / particle disintegration vanish animation on delete */
+@keyframes telegramCardVanish {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0px);
+  }
+  30% {
+    opacity: 0.85;
+    transform: scale(0.985);
+    filter: blur(1px);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.88) translateY(-6px);
+    filter: blur(6px);
+  }
+}
+
+@keyframes telegramShardBurst {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1) rotate(0deg);
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--tx, 20px), var(--ty, -30px)) scale(0.1) rotate(var(--rot, 90deg));
+  }
+}
+
+.animate-telegram-vanish {
+  animation: telegramCardVanish 0.48s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  pointer-events: none;
+}
+
+.animate-telegram-shard {
+  animation: telegramShardBurst 0.52s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes holdFill {
+  0% {
+    transform: scaleY(0);
+    transform-origin: bottom;
+  }
+  100% {
+    transform: scaleY(1);
+    transform-origin: bottom;
+  }
+}

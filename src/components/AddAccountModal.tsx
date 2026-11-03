@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -6,16 +6,23 @@ import {
   faQrcode,
   faKey,
   faUpload,
+  faCamera,
+  faCameraRotate,
+  faStop,
   faCircleCheck,
   faCircleExclamation,
   faTag,
   faUser,
+  faEye,
+  faEyeSlash,
+  faTriangleExclamation,
 } from '@fortawesome/free-solid-svg-icons';
 import jsQR from 'jsqr';
 import { BrandIcon, POPULAR_PRESETS } from './BrandIcon';
 import { CustomDropdown } from './CustomDropdown';
 import { DEFAULT_GROUPS } from '../types';
 import { isMobile } from '../utils/platform';
+import { validateBase32Secret } from '../utils/security';
 
 interface AddAccountModalProps {
   isOpen: boolean;
@@ -52,18 +59,60 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({
   const [selectedGroup, setSelectedGroup] = useState<string>(defaultGroup || '');
   const [isAddingNewGroup, setIsAddingNewGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
+  const [showSecret, setShowSecret] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameraStarting, setCameraStarting] = useState(false);
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
 
-  React.useEffect(() => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraCaptureInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const scanCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const scanRafRef = useRef<number | null>(null);
+
+  const stopCamera = useCallback(() => {
+    if (scanRafRef.current !== null) {
+      cancelAnimationFrame(scanRafRef.current);
+      scanRafRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setIsCameraActive(false);
+    setCameraStarting(false);
+  }, []);
+
+  useEffect(() => {
     if (isOpen) {
       setSelectedGroup(defaultGroup || '');
       setIsAddingNewGroup(false);
       setNewGroupName('');
+    } else {
+      stopCamera();
     }
-  }, [isOpen, defaultGroup]);
+  }, [isOpen, defaultGroup, stopCamera]);
+
+  useEffect(() => {
+    if (activeTab !== 'qr') {
+      stopCamera();
+    }
+  }, [activeTab, stopCamera]);
+
+  useEffect(() => {
+    return () => {
+      stopCamera();
+    };
+  }, [stopCamera]);
 
   if (!isOpen) return null;
 
@@ -129,6 +178,131 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({
     }
   };
 
+  const startCamera = async (modeOverride?: 'environment' | 'user', deviceIdOverride?: string) => {
+    setError(null);
+    stopCamera();
+    setCameraStarting(true);
+
+    const targetMode = modeOverride || facingMode;
+    const targetDeviceId = deviceIdOverride !== undefined ? deviceIdOverride : selectedDeviceId;
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setCameraStarting(false);
+      // Fallback to native OS camera file capture if WebRTC getUserMedia is unavailable
+      if (cameraCaptureInputRef.current) {
+        cameraCaptureInputRef.current.click();
+      } else {
+        setError('Camera API is not supported in this environment. Please upload a QR image.');
+      }
+      return;
+    }
+
+    try {
+      let stream: MediaStream;
+      try {
+        const videoConstraints: MediaTrackConstraints = targetDeviceId
+          ? { deviceId: { exact: targetDeviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+          : { facingMode: { ideal: targetMode }, width: { ideal: 1280 }, height: { ideal: 720 } };
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: videoConstraints,
+          audio: false,
+        });
+      } catch {
+        // Fallback to any available video camera (e.g. desktop webcam without facingMode support)
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      }
+
+      streamRef.current = stream;
+      setIsCameraActive(true);
+      setCameraStarting(false);
+
+      // Enumerate available video input devices (useful on Windows/macOS/Linux/Phones with multiple cameras)
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cams = devices.filter((d) => d.kind === 'videoinput');
+        setVideoDevices(cams);
+        const activeTrack = stream.getVideoTracks()[0];
+        const settings = activeTrack?.getSettings();
+        if (settings?.deviceId) {
+          setSelectedDeviceId(settings.deviceId);
+        }
+      } catch {
+        // Ignore device enumeration errors
+      }
+
+      // Attach stream to video element and start scanning frames
+      requestAnimationFrame(() => {
+        if (videoRef.current && streamRef.current) {
+          videoRef.current.srcObject = streamRef.current;
+          videoRef.current.setAttribute('playsinline', 'true');
+          videoRef.current.play().catch(() => {});
+
+          const scanFrame = () => {
+            const video = videoRef.current;
+            if (!video || !streamRef.current) return;
+
+            if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0 && video.videoHeight > 0) {
+              if (!scanCanvasRef.current) {
+                scanCanvasRef.current = document.createElement('canvas');
+              }
+              const canvas = scanCanvasRef.current;
+              canvas.width = video.videoWidth;
+              canvas.height = video.videoHeight;
+              const ctx = canvas.getContext('2d', { willReadFrequently: true });
+              if (ctx) {
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                  inversionAttempts: 'attemptBoth',
+                });
+                if (code && code.data) {
+                  stopCamera();
+                  parseOtpUri(code.data);
+                  return;
+                }
+              }
+            }
+            scanRafRef.current = requestAnimationFrame(scanFrame);
+          };
+
+          scanRafRef.current = requestAnimationFrame(scanFrame);
+        }
+      });
+    } catch (err: any) {
+      setCameraStarting(false);
+      setIsCameraActive(false);
+      if (isMobile() && cameraCaptureInputRef.current) {
+        // Fallback to native OS camera intent on mobile if WebView camera stream is blocked
+        cameraCaptureInputRef.current.click();
+      } else {
+        setError(
+          'Unable to access camera (' +
+            (err?.message || 'Permission denied or no camera found') +
+            '). You can also capture or upload a QR image below.'
+        );
+      }
+    }
+  };
+
+  const handleSwitchCamera = () => {
+    if (videoDevices.length > 1) {
+      const currentIdx = videoDevices.findIndex((d) => d.deviceId === selectedDeviceId);
+      const nextDevice = videoDevices[(currentIdx + 1) % videoDevices.length];
+      if (nextDevice?.deviceId) {
+        setSelectedDeviceId(nextDevice.deviceId);
+        startCamera(facingMode, nextDevice.deviceId);
+        return;
+      }
+    }
+    const nextMode = facingMode === 'environment' ? 'user' : 'environment';
+    setFacingMode(nextMode);
+    setSelectedDeviceId('');
+    startCamera(nextMode, '');
+  };
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -144,7 +318,9 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({
         if (!ctx) return;
         ctx.drawImage(img, 0, 0, img.width, img.height);
         const imageData = ctx.getImageData(0, 0, img.width, img.height);
-        const code = jsQR(imageData.data, imageData.width, imageData.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: 'attemptBoth',
+        });
 
         if (code) {
           parseOtpUri(code.data);
@@ -155,6 +331,7 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({
       img.src = event.target?.result as string;
     };
     reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -165,13 +342,19 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({
       return;
     }
 
+    const validation = validateBase32Secret(secret);
+    if (!validation.valid) {
+      setError(validation.error || 'Invalid Base32 secret key.');
+      return;
+    }
+
     try {
       setLoading(true);
       const effectiveGroup = selectedGroup.trim() || null;
       await onAddAccount({
         issuer: issuer.trim() || 'Service',
         label: label.trim() || 'Account',
-        secret: secret.trim(),
+        secret: validation.cleanSecret,
         algorithm,
         digits,
         period,
@@ -182,6 +365,7 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({
       setIssuer('');
       setLabel('');
       setSecret('');
+      setShowSecret(false);
       setSelectedGroup(defaultGroup || '');
       setIsAddingNewGroup(false);
       setNewGroupName('');
@@ -193,12 +377,10 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({
   };
 
   return (
-    <div className={`absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in overflow-hidden ${
+    <div className={`fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fade-in ${
       isMobile() ? 'rounded-none' : 'rounded-2xl'
     }`}>
-      <div className={`relative w-full max-w-md bg-[#030504] border border-[#00FF88]/20 shadow-[0_0_50px_rgba(0,255,136,0.12)] p-6 overflow-hidden ${
-        isMobile() ? 'rounded-none' : 'rounded-2xl'
-      }`}>
+      <div className={`relative w-full max-w-md max-h-[90vh] overflow-y-auto bg-[#030504] border border-[#00FF88]/20 shadow-[0_0_50px_rgba(0,255,136,0.12)] p-4 sm:p-6 rounded-2xl`}>
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-white/5">
           <div className="flex items-center space-x-2.5">
@@ -281,31 +463,142 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({
         )}
 
         {activeTab === 'qr' ? (
-          <div className="space-y-4 py-4 text-center">
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-white/10 hover:border-[#00FF88]/40 rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition-colors bg-white/[0.02]"
-            >
-              <FontAwesomeIcon icon={faUpload} className="w-8 h-8 text-neutral-500 mb-2 group-hover:text-[#00FF88]" />
-              <p className="text-xs text-neutral-300 font-medium">Upload QR Screenshot or Image</p>
-              <p className="text-[10px] text-neutral-500 mt-1">Supports Google Authenticator Export QR & Standard TOTP QRs</p>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleImageUpload}
-              />
+          <div className="space-y-3.5 py-2 text-center">
+            {/* Live Camera Scanner Viewport or Launch Card */}
+            {isCameraActive ? (
+              <div className="relative rounded-2xl overflow-hidden border border-[#00FF88]/40 bg-black shadow-[0_0_30px_rgba(0,255,136,0.15)]">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-60 sm:h-64 object-cover bg-black"
+                />
+                {/* QR Target Reticle Overlay */}
+                <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                  <div className="w-44 h-44 rounded-2xl border-2 border-[#00FF88]/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] relative">
+                    <span className="absolute -top-0.5 -left-0.5 w-5 h-5 border-t-4 border-l-4 border-[#00FF88] rounded-tl-lg" />
+                    <span className="absolute -top-0.5 -right-0.5 w-5 h-5 border-t-4 border-r-4 border-[#00FF88] rounded-tr-lg" />
+                    <span className="absolute -bottom-0.5 -left-0.5 w-5 h-5 border-b-4 border-l-4 border-[#00FF88] rounded-bl-lg" />
+                    <span className="absolute -bottom-0.5 -right-0.5 w-5 h-5 border-b-4 border-r-4 border-[#00FF88] rounded-br-lg" />
+                    <div className="absolute inset-x-2 top-1/2 h-0.5 bg-[#00FF88]/70 shadow-[0_0_8px_#00FF88] animate-pulse" />
+                  </div>
+                </div>
+
+                {/* Camera Controls Overlay Bar */}
+                <div className="absolute bottom-2.5 inset-x-3 flex items-center justify-between gap-2 z-10">
+                  <span className="px-2.5 py-1 rounded-lg bg-black/75 border border-white/10 text-[10px] font-medium text-[#00FF88] backdrop-blur-md">
+                    Point camera at QR code...
+                  </span>
+                  <div className="flex items-center space-x-1.5">
+                    <button
+                      type="button"
+                      onClick={handleSwitchCamera}
+                      className="p-2 rounded-lg bg-black/75 hover:bg-black/90 text-white border border-white/15 transition-colors cursor-pointer"
+                      title="Switch Camera (Front / Back / Webcam)"
+                    >
+                      <FontAwesomeIcon icon={faCameraRotate} className="w-3.5 h-3.5 text-[#00FF88]" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={stopCamera}
+                      className="px-2.5 py-1.5 rounded-lg bg-red-500/80 hover:bg-red-500 text-white text-[10px] font-bold flex items-center space-x-1 transition-colors cursor-pointer"
+                      title="Stop Camera"
+                    >
+                      <FontAwesomeIcon icon={faStop} className="w-3 h-3" />
+                      <span>Close</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Open Live Camera Button (Phone Android/iOS, Windows, macOS, Linux) */}
+                <button
+                  type="button"
+                  onClick={() => startCamera()}
+                  disabled={cameraStarting}
+                  className="border-2 border-dashed border-[#00FF88]/30 hover:border-[#00FF88] rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition-all bg-[#00FF88]/[0.04] hover:bg-[#00FF88]/[0.08] group"
+                >
+                  <div className="w-11 h-11 rounded-xl bg-[#00FF88]/15 border border-[#00FF88]/30 flex items-center justify-center mb-2.5 group-hover:scale-105 transition-transform">
+                    <FontAwesomeIcon icon={faCamera} className="w-5 h-5 text-[#00FF88]" />
+                  </div>
+                  <p className="text-xs text-white font-semibold">
+                    {cameraStarting ? 'Opening Camera...' : 'Open Camera Scanner'}
+                  </p>
+                  <p className="text-[10px] text-neutral-400 mt-1">
+                    Scan QR live via Phone, iOS, Windows or Webcam
+                  </p>
+                </button>
+
+                {/* Upload QR Image / Screenshot Button */}
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-2 border-dashed border-white/10 hover:border-[#00FF88]/40 rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition-all bg-white/[0.02] hover:bg-white/[0.04] group"
+                >
+                  <div className="w-11 h-11 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center mb-2.5 group-hover:border-[#00FF88]/30 group-hover:scale-105 transition-all">
+                    <FontAwesomeIcon icon={faUpload} className="w-5 h-5 text-neutral-400 group-hover:text-[#00FF88]" />
+                  </div>
+                  <p className="text-xs text-neutral-200 font-semibold">Upload QR Image</p>
+                  <p className="text-[10px] text-neutral-400 mt-1">
+                    Select QR screenshot or photo from gallery
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Native OS Camera Photo Capture Fallback (Especially helpful on mobile iOS/Android WebViews) */}
+            <div className="flex items-center justify-center gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => cameraCaptureInputRef.current?.click()}
+                className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] font-medium text-neutral-300 hover:text-[#00FF88] transition-colors cursor-pointer"
+              >
+                <FontAwesomeIcon icon={faCamera} className="w-3 h-3 text-[#00FF88]" />
+                <span>Take QR Photo with System Camera</span>
+              </button>
+              {isCameraActive && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] font-medium text-neutral-300 hover:text-white transition-colors cursor-pointer"
+                >
+                  <FontAwesomeIcon icon={faUpload} className="w-3 h-3 text-neutral-400" />
+                  <span>Upload File</span>
+                </button>
+              )}
             </div>
+
+            <p className="text-[10px] text-neutral-500">
+              Supports Google Authenticator Export QR & Standard TOTP QRs
+            </p>
+
+            {/* Hidden File Input for Gallery / File System */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleImageUpload}
+            />
+            {/* Hidden Native Camera Capture Input for Mobile (Android / iOS) */}
+            <input
+              ref={cameraCaptureInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={handleImageUpload}
+            />
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-3.5">
-            {/* Quick Provider Presets */}
+            {/* Quick Provider & Icon Presets */}
             <div>
               <label className="block text-[10px] font-semibold text-neutral-400 mb-1.5 uppercase tracking-wider">
-                Select Service Preset
+                Select Account Icon / Service Preset (Rockstar Games & 30+ More)
               </label>
-              <div className="grid grid-cols-4 gap-1.5 max-h-36 overflow-y-auto pr-1">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 max-h-32 sm:max-h-36 overflow-y-auto pr-1">
                 {POPULAR_PRESETS.map((preset) => {
                   const isSelected = issuer.toLowerCase() === preset.name.toLowerCase();
                   return (
@@ -333,7 +626,7 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5 pt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
               <div>
                 <label className="block text-[11px] font-semibold text-neutral-400 mb-1">
                   ISSUER / SERVICE NAME
@@ -370,13 +663,23 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-[11px] font-semibold text-neutral-400 mb-1">
-                SECRET KEY (BASE32)
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[11px] font-semibold text-neutral-400">
+                  SECRET KEY (BASE32 RFC 4648)
+                </label>
+                {secret.trim() && (
+                  <span className={`text-[10px] font-medium flex items-center space-x-1 ${
+                    validateBase32Secret(secret).valid ? 'text-[#00FF88]' : 'text-red-400'
+                  }`}>
+                    <FontAwesomeIcon icon={validateBase32Secret(secret).valid ? faCircleCheck : faTriangleExclamation} className="w-3 h-3 mr-1" />
+                    {validateBase32Secret(secret).valid ? `Valid (${validateBase32Secret(secret).charCount} chars)` : 'Invalid Base32'}
+                  </span>
+                )}
+              </div>
               <div className="group flex items-center h-[46px] bg-[#050806] border border-white/10 rounded-xl px-3.5 focus-within:border-[#00FF88] focus-within:ring-2 focus-within:ring-[#00FF88]/20 focus-within:shadow-[0_0_20px_rgba(0,255,136,0.18)] transition-all">
                 <FontAwesomeIcon icon={faKey} className="w-4 h-4 text-neutral-500 group-focus-within:text-[#00FF88] transition-colors shrink-0 mr-2.5" />
                 <input
-                  type="text"
+                  type={showSecret ? "text" : "password"}
                   value={secret}
                   onChange={(e) => {
                     const val = e.target.value;
@@ -386,11 +689,31 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({
                       setSecret(val);
                     }
                   }}
-                  placeholder="Paste Secret Key or otpauth / migration URI"
+                  placeholder="Paste Secret Key or otpauth URI"
                   className="w-full bg-transparent text-sm font-mono text-white placeholder-neutral-500 focus:outline-none tracking-wider uppercase"
                   required
+                  autoComplete="off"
+                  spellCheck={false}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowSecret(!showSecret)}
+                  className="ml-2 text-neutral-500 hover:text-white transition-colors p-1"
+                  title={showSecret ? "Mask Secret" : "Reveal Secret"}
+                >
+                  <FontAwesomeIcon icon={showSecret ? faEyeSlash : faEye} className="w-3.5 h-3.5" />
+                </button>
               </div>
+              {secret.trim() && !validateBase32Secret(secret).valid && (
+                <p className="text-[11px] text-red-400 mt-1 flex items-start space-x-1">
+                  <span>{validateBase32Secret(secret).error}</span>
+                </p>
+              )}
+              {secret.trim() && validateBase32Secret(secret).valid && validateBase32Secret(secret).warning && (
+                <p className="text-[11px] text-amber-400 mt-1 flex items-start space-x-1">
+                  <span>{validateBase32Secret(secret).warning}</span>
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-3 gap-2 pt-1">

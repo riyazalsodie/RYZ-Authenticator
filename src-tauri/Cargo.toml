@@ -1,8 +1,13 @@
 [package]
 name = "ryz-authenticator"
-version = "1.0.0"
-description = "RYZ Auth — Enterprise-Grade Secure Desktop Authenticator"
-authors = ["R ! Y 4 Z Security Engineering"]
+version = "1.1.0"
+description = "Fast, Open-Source, Zero-Knowledge 2FA & TOTP Authenticator for Windows, macOS, Linux, Android & iOS (Authy Desktop Alternative)"
+authors = ["R ! Y 4 Z"]
+license = "MIT"
+repository = "https://github.com/riyazalsodie/RYZ-Authenticator"
+homepage = "https://github.com/riyazalsodie/RYZ-Authenticator"
+keywords = ["2fa", "totp", "authenticator", "tauri", "cryptography"]
+categories = ["cryptography", "authentication", "gui", "command-line-utilities"]
 edition = "2021"
 
 [lib]

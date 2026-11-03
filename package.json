@@ -1,7 +1,41 @@
 {
   "name": "ryz-authenticator",
-  "private": true,
-  "version": "1.0.0",
+  "private": false,
+  "version": "1.1.0",
+  "description": "Fast, Open-Source, Zero-Knowledge 2FA & TOTP Authenticator for Windows, macOS, Linux, Android & iOS — Built in Rust & Tauri 2.0 (Authy Desktop Alternative)",
+  "author": "R ! Y 4 Z",
+  "license": "MIT",
+  "homepage": "https://github.com/riyazalsodie/RYZ-Authenticator",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/riyazalsodie/RYZ-Authenticator.git"
+  },
+  "bugs": {
+    "url": "https://github.com/riyazalsodie/RYZ-Authenticator/issues"
+  },
+  "keywords": [
+    "2fa",
+    "totp",
+    "hotp",
+    "authenticator",
+    "authy-alternative",
+    "google-authenticator",
+    "2fas",
+    "otp",
+    "rust",
+    "tauri",
+    "zero-knowledge",
+    "xchacha20-poly1305",
+    "argon2id",
+    "security",
+    "cryptography",
+    "desktop-authenticator",
+    "windows",
+    "macos",
+    "linux",
+    "android",
+    "ios"
+  ],
   "type": "module",
   "scripts": {
     "dev": "vite",
