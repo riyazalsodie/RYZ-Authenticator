@@ -43,3 +43,6 @@ pnpm-debug.log*
 emulator_security_check.png
 .env
 .env*.local
+
+# Internal Checklists
+WINGET_CHECKLIST.md
