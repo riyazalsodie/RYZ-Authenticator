@@ -23,6 +23,7 @@ export interface VaultStatus {
   exists: boolean;
   is_unlocked: boolean;
   user?: UserProfile | null;
+  cloud_configured?: boolean;
 }
 
 export type ViewMode = 'all' | 'favorites' | 'groups' | 'settings';

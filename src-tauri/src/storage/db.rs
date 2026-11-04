@@ -12,13 +12,13 @@ use argon2::{
     Argon2,
 };
 
-/// Obfuscated runtime credentials to prevent binary string / regex extraction
-fn get_secure_default_db_url() -> String {
-    const OBFUSCATED: [u8; 72] = [
-        10, 21, 9, 14, 29, 8, 31, 9, 11, 22, 64, 85, 85, 10, 21, 9, 14, 29, 8, 31, 9, 64, 8, 27, 29, 27, 23, 19, 20, 29, 77, 77, 77, 58, 75, 67, 79, 84, 72, 74, 75, 84, 72, 78, 77, 84, 75, 72, 74, 64, 79, 78, 73, 72, 85, 8, 3, 0, 37, 27, 15, 14, 18, 31, 20, 14, 19, 25, 27, 14, 21, 8
-    ];
-    let deobf: Vec<u8> = OBFUSCATED.iter().map(|b| b ^ 0x7A).collect();
-    String::from_utf8(deobf).unwrap_or_default()
+/// Optional Cloud Database Configuration
+/// No hardcoded credentials. Reads from DATABASE_URL or RYZ_DATABASE_URL environment variable,
+/// or user-configured endpoint. When omitted, RYZ Authenticator operates in 100% offline local-first mode.
+fn get_configured_db_url() -> String {
+    std::env::var("DATABASE_URL")
+        .or_else(|_| std::env::var("RYZ_DATABASE_URL"))
+        .unwrap_or_default()
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
@@ -208,14 +208,16 @@ pub struct Database {
 
 impl Database {
     pub fn new(db_url: Option<String>, app_dir: Option<PathBuf>) -> Self {
-        let url = db_url
-            .or_else(|| std::env::var("DATABASE_URL").ok())
-            .unwrap_or_else(get_secure_default_db_url);
+        let url = db_url.unwrap_or_else(get_configured_db_url);
         Self {
             db_url: url,
             client: Arc::new(Mutex::new(None)),
             rate_limiter: Arc::new(Mutex::new(SecurityRateLimiter::new(app_dir))),
         }
+    }
+
+    pub fn is_cloud_configured(&self) -> bool {
+        !self.db_url.trim().is_empty()
     }
 
     pub async fn should_allow_sync(&self, user_id: &str, min_interval_ms: u64) -> bool {
@@ -224,6 +226,11 @@ impl Database {
     }
 
     pub async fn connect(&self) -> Result<(), String> {
+        if !self.is_cloud_configured() {
+            // Local-first mode: zero cloud database configured, 100% offline
+            return Ok(());
+        }
+
         let (client, connection) = tokio_postgres::connect(&self.db_url, NoTls)
             .await
             .map_err(|e| format!("Failed to connect to PostgreSQL: {}", e))?;
@@ -287,6 +294,9 @@ impl Database {
     }
 
     async fn get_client(&self) -> Result<Client, String> {
+        if !self.is_cloud_configured() {
+            return Err("Cloud sync is not configured. Vault operates in local-first offline mode.".to_string());
+        }
         let (client, connection) = tokio_postgres::connect(&self.db_url, NoTls)
             .await
             .map_err(|e| format!("PostgreSQL connection failure: {}", e))?;

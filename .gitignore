@@ -44,5 +44,6 @@ emulator_security_check.png
 .env
 .env*.local
 
-# Internal Checklists
+# Internal Checklists & Scratch Assets
 WINGET_CHECKLIST.md
+docs/raw_recordings/

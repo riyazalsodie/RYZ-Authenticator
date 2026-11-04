@@ -60,6 +60,7 @@ export const App: React.FC = () => {
 
   // Bidirectional Cloud Synchronization with PostgreSQL (Rate-limited & Safe)
   const handleSyncCloud = useCallback(async () => {
+    if (!currentUser) return;
     const now = Date.now();
     // Sliding window rate limiter: max 8 syncs per 60s
     syncTimestampsWindowRef.current = syncTimestampsWindowRef.current.filter(
@@ -86,7 +87,7 @@ export const App: React.FC = () => {
     } finally {
       setIsSyncing(false);
     }
-  }, []);
+  }, [currentUser]);
 
   // Debounced Auto-Sync triggered automatically every time the user edits/adds/deletes
   const scheduleAutoSync = useCallback(() => {
@@ -222,7 +223,34 @@ export const App: React.FC = () => {
     };
   }, [vaultStatus.is_unlocked, handleSyncCloud]);
 
-  // Auth Handlers: Login & Register with PostgreSQL
+  // Local-First Auth Handlers: Unlock & Setup offline vault
+  const handleLocalUnlock = async (pass: string, rememberMe: boolean) => {
+    await invoke('unlock_vault', {
+      password: pass,
+      rememberMe,
+    });
+    const status = await invoke<VaultStatus>('check_vault_status');
+    setVaultStatus(status);
+    if (status.user) {
+      setCurrentUser(status.user);
+    }
+    await fetchCodes();
+  };
+
+  const handleLocalSetup = async (pass: string, rememberMe: boolean) => {
+    await invoke('setup_master_password', {
+      password: pass,
+      rememberMe,
+    });
+    const status = await invoke<VaultStatus>('check_vault_status');
+    setVaultStatus(status);
+    if (status.user) {
+      setCurrentUser(status.user);
+    }
+    await fetchCodes();
+  };
+
+  // Cloud Auth Handlers: Login & Register with PostgreSQL (Optional Cloud Sync)
   const handleLogin = async (identifier: string, pass: string, rememberMe: boolean) => {
     const profile = await invoke<UserProfile>('login_user', {
       identifier,
@@ -230,7 +258,7 @@ export const App: React.FC = () => {
       rememberMe,
     });
     setCurrentUser(profile);
-    setVaultStatus({ exists: true, is_unlocked: true, user: profile });
+    setVaultStatus({ exists: true, is_unlocked: true, user: profile, cloud_configured: true });
     await fetchCodes();
   };
 
@@ -242,7 +270,7 @@ export const App: React.FC = () => {
       rememberMe,
     });
     setCurrentUser(profile);
-    setVaultStatus({ exists: true, is_unlocked: true, user: profile });
+    setVaultStatus({ exists: true, is_unlocked: true, user: profile, cloud_configured: true });
     await fetchCodes();
   };
 
@@ -406,16 +434,19 @@ export const App: React.FC = () => {
       );
     }
 
-    // 1. Auth Screen: Login with Username/Gmail + Pass or Create Account
+    // 1. Auth Screen: Local Vault (Default) or Cloud Sync
     if (!vaultStatus.is_unlocked) {
       return (
         <div className="flex-1 relative overflow-hidden flex flex-col">
           <AuthModal
+            onLocalUnlock={handleLocalUnlock}
+            onLocalSetup={handleLocalSetup}
             onLogin={handleLogin}
             onRegister={handleRegister}
             onUnlockWindowsHello={handleUnlockWindowsHello}
             onResetVault={handleResetVault}
-            initialMode={vaultStatus.exists ? 'login' : 'register'}
+            initialMode={vaultStatus.exists ? 'local-unlock' : 'local-setup'}
+            cloudConfigured={vaultStatus.cloud_configured}
           />
         </div>
       );

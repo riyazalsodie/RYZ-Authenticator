@@ -13,15 +13,20 @@ pub struct VaultStatusResponse {
     pub exists: bool,
     pub is_unlocked: bool,
     pub user: Option<UserProfile>,
+    pub cloud_configured: bool,
 }
 
 #[tauri::command]
-pub fn check_vault_status(state: State<'_, SafeVaultState>) -> Result<VaultStatusResponse, String> {
+pub fn check_vault_status(
+    db: State<'_, SafeDatabaseState>,
+    state: State<'_, SafeVaultState>,
+) -> Result<VaultStatusResponse, String> {
     let vault = state.lock().map_err(|e| e.to_string())?;
     Ok(VaultStatusResponse {
         exists: vault.vault_exists() || vault.current_user.is_some(),
         is_unlocked: vault.is_unlocked,
         user: vault.current_user.clone(),
+        cloud_configured: db.is_cloud_configured(),
     })
 }
 
@@ -273,15 +278,35 @@ pub fn logout_user(state: State<'_, SafeVaultState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn setup_master_password(password: String, state: State<'_, SafeVaultState>) -> Result<(), String> {
+pub fn setup_master_password(
+    password: String,
+    remember_me: Option<bool>,
+    state: State<'_, SafeVaultState>,
+) -> Result<(), String> {
     let mut vault = state.lock().map_err(|e| e.to_string())?;
-    vault.initialize_new_vault(&password)
+    vault.initialize_new_vault(&password)?;
+    if remember_me.unwrap_or(false) {
+        let _ = save_remembered_session("local_vault", &password);
+    } else {
+        clear_remembered_session();
+    }
+    Ok(())
 }
 
 #[tauri::command]
-pub fn unlock_vault(password: String, state: State<'_, SafeVaultState>) -> Result<(), String> {
+pub fn unlock_vault(
+    password: String,
+    remember_me: Option<bool>,
+    state: State<'_, SafeVaultState>,
+) -> Result<(), String> {
     let mut vault = state.lock().map_err(|e| e.to_string())?;
-    vault.unlock_with_password(&password)
+    vault.unlock_with_password(&password)?;
+    if remember_me.unwrap_or(false) {
+        let _ = save_remembered_session("local_vault", &password);
+    } else {
+        clear_remembered_session();
+    }
+    Ok(())
 }
 
 #[tauri::command]
