@@ -16,9 +16,12 @@ import {
   faLock,
   faRightFromBracket,
   faCloud,
+  faDatabase,
+  faArrowsRotate,
+  faPlug,
 } from '@fortawesome/free-solid-svg-icons';
 import { CustomDropdown } from './CustomDropdown';
-import { UserProfile } from '../types';
+import { UserProfile, CloudConfig } from '../types';
 import {
   getAutostartInfo,
   getProtectionStatus,
@@ -57,9 +60,69 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Cloud Database state
+  const [cloudConfig, setCloudConfig] = useState<CloudConfig | null>(null);
+  const [editingDbUrl, setEditingDbUrl] = useState(false);
+  const [dbUrlInput, setDbUrlInput] = useState('');
+  const [isTestingDb, setIsTestingDb] = useState(false);
+  const [dbTestMessage, setDbTestMessage] = useState<{ success: boolean; text: string } | null>(null);
+
   useEffect(() => {
     loadSettings();
+    loadCloudConfig();
   }, []);
+
+  const loadCloudConfig = async () => {
+    try {
+      const cfg = await invoke<CloudConfig>('get_cloud_config');
+      setCloudConfig(cfg);
+      if (cfg.raw_url) {
+        setDbUrlInput(cfg.raw_url);
+      }
+    } catch (err) {
+      console.error('Failed to query cloud config:', err);
+    }
+  };
+
+  const handleTestDb = async () => {
+    if (!dbUrlInput.trim()) return;
+    setIsTestingDb(true);
+    setDbTestMessage(null);
+    try {
+      const msg = await invoke<string>('test_cloud_connection', { dbUrl: dbUrlInput.trim() });
+      setDbTestMessage({ success: true, text: msg || 'Connection verified!' });
+    } catch (e: any) {
+      setDbTestMessage({ success: false, text: e?.toString() || 'Connection failed' });
+    } finally {
+      setIsTestingDb(false);
+    }
+  };
+
+  const handleSaveDb = async () => {
+    if (!dbUrlInput.trim()) return;
+    try {
+      await invoke('save_cloud_config', { dbUrl: dbUrlInput.trim() });
+      await loadCloudConfig();
+      setEditingDbUrl(false);
+      setDbTestMessage(null);
+      showNotification('Cloud database configuration saved');
+    } catch (e: any) {
+      setDbTestMessage({ success: false, text: e?.toString() || 'Failed to save configuration' });
+    }
+  };
+
+  const handleDisconnectDb = async () => {
+    try {
+      await invoke('disconnect_cloud_db');
+      await loadCloudConfig();
+      setDbUrlInput('');
+      setEditingDbUrl(false);
+      setDbTestMessage(null);
+      showNotification('Cloud database disconnected (Offline mode)');
+    } catch (e: any) {
+      setErrorMessage(e?.toString() || 'Failed to disconnect');
+    }
+  };
 
   const loadSettings = async () => {
     try {
@@ -163,7 +226,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 {currentUser ? currentUser.username : 'Local Vault Session'}
               </p>
               <p className="text-xs text-neutral-400 truncate">
-                {currentUser ? currentUser.email : 'Sign in to enable PostgreSQL cloud sync'}
+                {currentUser ? currentUser.email : 'Local offline mode (Cloud sync optional)'}
               </p>
             </div>
           </div>
@@ -190,6 +253,99 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </button>
             )}
           </div>
+        </div>
+
+        {/* Cloud Database Connection Settings */}
+        <div className="pt-2 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-xs font-semibold text-white flex items-center space-x-2">
+                <FontAwesomeIcon icon={faDatabase} className="w-3.5 h-3.5 text-[#00FF88]" />
+                <span>Cloud Database Endpoint</span>
+              </div>
+              <p className="text-[11px] text-neutral-500 mt-0.5">
+                {cloudConfig?.configured
+                  ? `Connected: ${cloudConfig.masked_url}`
+                  : 'Not configured — operating in offline local-first mode'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setEditingDbUrl(!editingDbUrl)}
+              className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium text-white transition-all cursor-pointer"
+            >
+              {editingDbUrl ? 'Close' : cloudConfig?.configured ? 'Configure' : 'Connect Cloud Database'}
+            </button>
+          </div>
+
+          {editingDbUrl && (
+            <div className="p-3 rounded-xl bg-white/[0.02] border border-[#00FF88]/20 space-y-2.5 animate-in fade-in">
+              <p className="text-[11px] text-neutral-400">
+                Connect any remote SQL database (Supabase, Neon, CockroachDB, or self-hosted) for encrypted cross-device synchronization:
+              </p>
+              <div className="flex items-center h-[38px] bg-[#050806] border border-white/10 rounded-xl px-3 focus-within:border-[#00FF88] transition-all">
+                <FontAwesomeIcon icon={faPlug} className="w-3.5 h-3.5 text-neutral-500 mr-2" />
+                <input
+                  type="text"
+                  value={dbUrlInput}
+                  onChange={(e) => setDbUrlInput(e.target.value)}
+                  placeholder="postgresql://user:password@host:5432/dbname"
+                  className="w-full bg-transparent text-xs text-white placeholder-neutral-600 focus:outline-none font-mono"
+                />
+              </div>
+
+              {dbTestMessage && (
+                <div
+                  className={`p-2 rounded-lg text-[11px] flex items-center space-x-2 ${
+                    dbTestMessage.success
+                      ? 'bg-emerald-950/40 border border-emerald-500/30 text-emerald-300'
+                      : 'bg-red-950/40 border border-red-500/30 text-red-300'
+                  }`}
+                >
+                  <FontAwesomeIcon
+                    icon={dbTestMessage.success ? faCircleCheck : faCircleExclamation}
+                    className="w-3.5 h-3.5 flex-shrink-0"
+                  />
+                  <span>{dbTestMessage.text}</span>
+                </div>
+              )}
+
+              <div className="flex items-center space-x-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleTestDb}
+                  disabled={isTestingDb || !dbUrlInput.trim()}
+                  className="flex-1 py-1.5 px-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-neutral-200 transition-all cursor-pointer disabled:opacity-40"
+                >
+                  {isTestingDb ? (
+                    <span className="flex items-center justify-center space-x-1.5">
+                      <FontAwesomeIcon icon={faArrowsRotate} className="w-3 h-3 animate-spin" />
+                      <span>Testing...</span>
+                    </span>
+                  ) : (
+                    'Test Connection'
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveDb}
+                  disabled={!dbUrlInput.trim()}
+                  className="flex-1 py-1.5 px-3 rounded-lg bg-[#00FF88] hover:bg-[#00E676] text-black text-xs font-bold transition-all cursor-pointer disabled:opacity-40 shadow-[0_0_12px_rgba(0,255,136,0.2)]"
+                >
+                  Save & Connect
+                </button>
+                {cloudConfig?.configured && (
+                  <button
+                    type="button"
+                    onClick={handleDisconnectDb}
+                    className="py-1.5 px-3 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs transition-all cursor-pointer border border-red-500/20"
+                  >
+                    Disconnect
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </section>
 

@@ -33,7 +33,7 @@ pub fn run() {
             let db_clone = db.clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = db_clone.connect().await {
-                    eprintln!("Initial PostgreSQL connection failed: {}", e);
+                    eprintln!("Initial cloud database connection failed: {}", e);
                 }
             });
             app.manage(db);
@@ -103,6 +103,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::check_vault_status,
+            commands::get_cloud_config,
+            commands::save_cloud_config,
+            commands::test_cloud_connection,
+            commands::disconnect_cloud_db,
             commands::register_user,
             commands::login_user,
             commands::try_auto_login,

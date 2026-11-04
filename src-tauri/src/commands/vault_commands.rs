@@ -8,6 +8,13 @@ use tauri::State;
 
 pub type SafeDatabaseState = Arc<Database>;
 
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct CloudConfigResponse {
+    pub configured: bool,
+    pub masked_url: String,
+    pub raw_url: String,
+}
+
 #[derive(serde::Serialize)]
 pub struct VaultStatusResponse {
     pub exists: bool,
@@ -28,6 +35,33 @@ pub fn check_vault_status(
         user: vault.current_user.clone(),
         cloud_configured: db.is_cloud_configured(),
     })
+}
+
+#[tauri::command]
+pub async fn get_cloud_config(db: State<'_, SafeDatabaseState>) -> Result<CloudConfigResponse, String> {
+    let configured = db.is_cloud_configured();
+    let raw = db.get_db_url().await;
+    let masked = db.get_masked_db_url().await;
+    Ok(CloudConfigResponse {
+        configured,
+        masked_url: masked,
+        raw_url: raw,
+    })
+}
+
+#[tauri::command]
+pub async fn save_cloud_config(db_url: String, db: State<'_, SafeDatabaseState>) -> Result<(), String> {
+    db.update_cloud_url(db_url).await
+}
+
+#[tauri::command]
+pub async fn test_cloud_connection(db_url: String) -> Result<String, String> {
+    Database::test_connection_url(&db_url).await
+}
+
+#[tauri::command]
+pub async fn disconnect_cloud_db(db: State<'_, SafeDatabaseState>) -> Result<(), String> {
+    db.disconnect_cloud().await
 }
 
 #[tauri::command]
@@ -434,7 +468,7 @@ pub async fn add_account(
         (id, user_id, acc)
     };
 
-    // If user is authenticated to PostgreSQL, sync and upload record directly to database
+    // If user is authenticated to cloud, sync and upload record directly to database
     if let (Some(uid), Some(acc)) = (user_id, acc_clone) {
         let _ = db.save_vault_account(&uid, &acc).await;
     }

@@ -47,3 +47,6 @@ emulator_security_check.png
 # Internal Checklists & Scratch Assets
 WINGET_CHECKLIST.md
 docs/raw_recordings/
+*.cfg
+*.cache
+docs/configs/

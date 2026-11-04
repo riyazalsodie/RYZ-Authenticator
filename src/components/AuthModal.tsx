@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   getRememberLabel,
@@ -18,7 +19,13 @@ import {
   faEnvelope,
   faShieldHalved,
   faCloud,
+  faGear,
+  faDatabase,
+  faCircleCheck,
+  faPlug,
+  faArrowLeft,
 } from '@fortawesome/free-solid-svg-icons';
+import type { CloudConfig } from '../types';
 
 export interface AuthModalProps {
   onLogin: (identifier: string, pass: string, rememberMe: boolean) => Promise<void>;
@@ -42,6 +49,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   cloudConfigured = false,
 }) => {
   const [mode, setMode] = useState<'local-unlock' | 'local-setup' | 'cloud-login' | 'cloud-register'>(initialMode);
+
+  // Cloud Database Configuration Drawer State
+  const [isCloudConfigured, setIsCloudConfigured] = useState<boolean>(cloudConfigured);
+  const [showDbConfigDrawer, setShowDbConfigDrawer] = useState<boolean>(false);
+  const [customDbUrl, setCustomDbUrl] = useState<string>('');
+  const [maskedDbUrl, setMaskedDbUrl] = useState<string>('');
+  const [isTestingDb, setIsTestingDb] = useState<boolean>(false);
+  const [dbTestResult, setDbTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [isSavingDb, setIsSavingDb] = useState<boolean>(false);
 
   // Local Vault fields
   const [localPassword, setLocalPassword] = useState('');
@@ -71,6 +87,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockoutSeconds, setLockoutSeconds] = useState(0);
   const lastSubmitTimeRef = useRef<number>(0);
+
+  // Query cloud configuration on mount
+  useEffect(() => {
+    const fetchCloudConfig = async () => {
+      try {
+        const config = await invoke<CloudConfig>('get_cloud_config');
+        setIsCloudConfigured(config.configured);
+        setMaskedDbUrl(config.masked_url);
+        if (config.raw_url) {
+          setCustomDbUrl(config.raw_url);
+        }
+      } catch (err) {
+        console.error('Failed to get cloud config:', err);
+      }
+    };
+    fetchCloudConfig();
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -134,7 +167,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const emailValidationMsg = useMemo(() => {
     if (!debouncedEmail) return null;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(debouncedEmail)) {
-      return 'Enter a valid email address (e.g. name@gmail.com)';
+      return 'Enter a valid email address';
     }
     return null;
   }, [debouncedEmail]);
@@ -166,6 +199,61 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         }
         return next;
       });
+    }
+  };
+
+  // Test Cloud DB Connection
+  const handleTestConnection = async () => {
+    if (!customDbUrl.trim()) {
+      setDbTestResult({ success: false, message: 'Please enter a database connection URL.' });
+      return;
+    }
+    setIsTestingDb(true);
+    setDbTestResult(null);
+    try {
+      const msg = await invoke<string>('test_cloud_connection', { dbUrl: customDbUrl.trim() });
+      setDbTestResult({ success: true, message: msg || 'Connected successfully!' });
+    } catch (err: any) {
+      setDbTestResult({ success: false, message: err?.toString() || 'Connection failed.' });
+    } finally {
+      setIsTestingDb(false);
+    }
+  };
+
+  // Save Cloud DB Connection
+  const handleSaveDbConfig = async () => {
+    if (!customDbUrl.trim()) {
+      setDbTestResult({ success: false, message: 'Please enter a database connection URL.' });
+      return;
+    }
+    setIsSavingDb(true);
+    setDbTestResult(null);
+    try {
+      await invoke('save_cloud_config', { dbUrl: customDbUrl.trim() });
+      const config = await invoke<CloudConfig>('get_cloud_config');
+      setIsCloudConfigured(config.configured);
+      setMaskedDbUrl(config.masked_url);
+      setShowDbConfigDrawer(false);
+      setDbTestResult(null);
+      setError(null);
+    } catch (err: any) {
+      setDbTestResult({ success: false, message: err?.toString() || 'Failed to save configuration.' });
+    } finally {
+      setIsSavingDb(false);
+    }
+  };
+
+  // Disconnect Cloud DB
+  const handleDisconnectDb = async () => {
+    try {
+      await invoke('disconnect_cloud_db');
+      setIsCloudConfigured(false);
+      setMaskedDbUrl('');
+      setCustomDbUrl('');
+      setShowDbConfigDrawer(false);
+      setDbTestResult(null);
+    } catch (err: any) {
+      setError(err?.toString() || 'Failed to disconnect cloud database');
     }
   };
 
@@ -249,7 +337,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanMail)) {
-      setError('Please enter a valid email address');
+      setError('Invalid email address format');
       return;
     }
     if (regPassword.length < 8) {
@@ -266,21 +354,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       await onRegister(cleanUser, cleanMail, regPassword, rememberMe);
       setFailedAttempts(0);
     } catch (err: any) {
-      handleAuthError(err, 'Failed to register cloud account');
+      handleAuthError(err, 'Registration failed. Check network or choose a different username/email.');
     } finally {
       setLoading(false);
     }
   };
 
   const handleHello = async () => {
-    if (!checkSubmissionGuard()) return;
+    if (lockoutSeconds > 0) return;
     setError(null);
     setLoading(true);
     try {
       await onUnlockWindowsHello();
-      setFailedAttempts(0);
     } catch (err: any) {
-      setError(getBiometricErrorMessage());
+      handleAuthError(err, getBiometricErrorMessage());
     } finally {
       setLoading(false);
     }
@@ -289,15 +376,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const isLocal = mode === 'local-unlock' || mode === 'local-setup';
 
   return (
-    <div
-      className={`w-full h-full flex flex-col items-center select-none overflow-y-auto overflow-x-hidden ${
-        isMobile()
-          ? 'px-4 pt-[max(env(safe-area-inset-top),2.25rem)] pb-[max(env(safe-area-inset-bottom),2rem)] bg-[#000000]'
-          : 'p-6 justify-center bg-transparent'
-      }`}
-    >
+    <div className="flex-1 flex flex-col items-center justify-center p-4 relative overflow-y-auto">
+      {/* Background radial aesthetic glow */}
+      <div className="absolute inset-0 pointer-events-none flex items-center justify-center overflow-hidden">
+        <div className="w-[450px] h-[450px] bg-[#00FF88]/[0.05] rounded-full blur-[110px] animate-pulse"></div>
+      </div>
+
       <div
-        className={`w-full max-w-sm my-auto flex flex-col items-center text-center space-y-4 bg-[#030504] ${
+        className={`w-full max-w-sm my-auto flex flex-col items-center text-center space-y-4 bg-[#030504] relative z-10 ${
           isMobile()
             ? 'border-0 rounded-none shadow-none p-2'
             : 'border border-[#00FF88]/20 rounded-2xl p-6 shadow-[0_0_60px_rgba(0,255,136,0.12)]'
@@ -312,10 +398,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         <div>
           <h2 className="text-base font-bold text-white tracking-wider uppercase">
-            {mode === 'local-unlock'
-              ? 'Unlock Local Vault'
-              : mode === 'local-setup'
-              ? 'Create Local Vault'
+            {isLocal
+              ? mode === 'local-unlock'
+                ? 'Unlock Local Vault'
+                : 'Create Local Vault'
+              : showDbConfigDrawer
+              ? 'Configure Cloud Database'
               : mode === 'cloud-login'
               ? 'Cloud Account Sign In'
               : 'Create Cloud Account'}
@@ -325,7 +413,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <span>
               {isLocal
                 ? '100% Offline · Local AES-256-GCM Vault'
-                : 'PostgreSQL Zero-Knowledge Sync'}
+                : 'Zero-Knowledge Encrypted Cloud Sync'}
             </span>
           </div>
         </div>
@@ -344,6 +432,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             type="button"
             onClick={() => {
               setMode(mode === 'local-setup' ? 'local-setup' : 'local-unlock');
+              setShowDbConfigDrawer(false);
               setError(null);
             }}
             className="relative flex-1 flex items-center justify-center space-x-1.5 z-10 focus:outline-none cursor-pointer"
@@ -379,7 +468,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Error Banner */}
         {error && (
-          <div className="w-full flex items-center space-x-2 p-2.5 rounded-xl bg-red-950/40 border border-red-500/30 text-red-300 text-xs text-left">
+          <div className="w-full flex items-center space-x-2 p-2.5 rounded-xl bg-red-950/40 border border-red-500/30 text-red-300 text-xs text-left animate-in fade-in">
             <FontAwesomeIcon icon={faCircleExclamation} className="w-4 h-4 flex-shrink-0 text-red-400" />
             <span className="break-words">
               {error}
@@ -462,13 +551,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
               <button
                 type="button"
-                onClick={() => setMode('local-setup')}
-                className="text-[11px] text-neutral-400 hover:text-[#00FF88] transition-colors cursor-pointer"
+                onClick={() => setShowConfirmReset(true)}
+                className="text-[11px] text-neutral-500 hover:text-red-400 transition-colors cursor-pointer"
               >
-                Reset / New
+                Reset Vault
               </button>
             </div>
 
+            {/* Submit Button */}
             <button
               type="submit"
               disabled={loading || lockoutSeconds > 0 || !localPassword}
@@ -477,8 +567,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               {loading ? (
                 <>
                   <FontAwesomeIcon icon={faArrowsRotate} className="w-3.5 h-3.5 animate-spin" />
-                  <span>Decrypting Vault...</span>
+                  <span>Unlocking Vault...</span>
                 </>
+              ) : lockoutSeconds > 0 ? (
+                <span>Locked ({lockoutSeconds}s)</span>
               ) : (
                 <>
                   <span>Unlock Local Vault</span>
@@ -574,19 +666,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   {getRememberLabel()}
                 </span>
               </label>
-
-              <button
-                type="button"
-                onClick={() => setMode('local-unlock')}
-                className="text-[11px] text-neutral-400 hover:text-[#00FF88] transition-colors cursor-pointer"
-              >
-                Back to Unlock
-              </button>
             </div>
 
             <button
               type="submit"
-              disabled={loading || !localPassword || localPassword.length < 8 || localPassword !== localConfirmPassword}
+              disabled={loading || localPassword.length < 8 || localPassword !== localConfirmPassword}
               className="w-full flex items-center justify-center space-x-2 py-3 rounded-xl bg-[#00FF88] text-black font-bold text-xs hover:bg-[#00E676] active:scale-98 transition-all shadow-[0_0_25px_rgba(0,255,136,0.3)] disabled:opacity-40 cursor-pointer"
             >
               {loading ? (
@@ -596,7 +680,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </>
               ) : (
                 <>
-                  <span>Create Local Vault</span>
+                  <span>Create Encrypted Vault</span>
                   <FontAwesomeIcon icon={faArrowRight} className="w-3.5 h-3.5" />
                 </>
               )}
@@ -604,187 +688,338 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </form>
         )}
 
-        {/* ==================== 3. CLOUD LOGIN MODE ==================== */}
-        {mode === 'cloud-login' && (
-          <form onSubmit={handleCloudLoginSubmit} className="w-full space-y-3.5">
-            {!cloudConfigured && (
-              <div className="p-2.5 rounded-xl bg-amber-950/30 border border-amber-500/30 text-amber-300 text-xs text-left">
-                ℹ️ No cloud database URL configured. You can set <code className="text-white bg-black/40 px-1 py-0.5 rounded font-mono">DATABASE_URL</code> or switch to <strong>Local Vault</strong>.
-              </div>
-            )}
-
-            <div className="group flex items-center h-[46px] bg-[#050806] border border-white/10 rounded-xl px-3.5 focus-within:border-[#00FF88] focus-within:ring-2 focus-within:ring-[#00FF88]/20 focus-within:shadow-[0_0_20px_rgba(0,255,136,0.18)] transition-all">
-              <FontAwesomeIcon icon={faUser} className="w-4 h-4 text-neutral-500 group-focus-within:text-[#00FF88] transition-colors shrink-0 mr-2.5" />
-              <input
-                type="text"
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
-                placeholder="Username or Email..."
-                autoFocus
-                disabled={lockoutSeconds > 0}
-                className="w-full bg-transparent text-sm text-white placeholder-neutral-500 focus:outline-none tracking-wider disabled:opacity-50"
-              />
-            </div>
-
-            <div className="relative">
-              <div className="group flex items-center h-[46px] bg-[#050806] border border-white/10 rounded-xl px-3.5 focus-within:border-[#00FF88] focus-within:ring-2 focus-within:ring-[#00FF88]/20 focus-within:shadow-[0_0_20px_rgba(0,255,136,0.18)] transition-all">
-                <FontAwesomeIcon icon={faKey} className="w-4 h-4 text-neutral-500 group-focus-within:text-[#00FF88] transition-colors shrink-0 mr-2.5" />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder="Password..."
-                  disabled={lockoutSeconds > 0}
-                  className="w-full bg-transparent text-sm text-white placeholder-neutral-500 focus:outline-none tracking-wider disabled:opacity-50"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="text-neutral-500 hover:text-white transition-colors p-1 rounded-md ml-1.5 focus:outline-none cursor-pointer"
-                  tabIndex={-1}
-                >
-                  <FontAwesomeIcon icon={showPassword ? faEyeSlash : faEye} className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between px-1 py-1">
-              <label className="flex items-center space-x-2.5 cursor-pointer group select-none">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="sr-only"
-                />
-                <div
-                  className={`w-4 h-4 rounded-md border transition-all flex items-center justify-center ${
-                    rememberMe
-                      ? 'bg-[#00FF88] border-[#00FF88] shadow-[0_0_8px_rgba(0,255,136,0.4)]'
-                      : 'bg-[#080D0A] border-white/20 group-hover:border-[#00FF88]/50'
-                  }`}
-                >
-                  {rememberMe && (
-                    <svg className="w-2.5 h-2.5 text-black stroke-[3]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
+        {/* ==================== 3. CLOUD SYNC SECTION ==================== */}
+        {!isLocal && (
+          <div className="w-full space-y-3.5">
+            {/* Database Server Drawer (When open OR when no database is configured yet) */}
+            {(!isCloudConfigured || showDbConfigDrawer) ? (
+              <div className="w-full space-y-3 p-3.5 rounded-2xl bg-white/[0.03] border border-[#00FF88]/20 text-left animate-in fade-in duration-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <FontAwesomeIcon icon={faDatabase} className="w-3.5 h-3.5 text-[#00FF88]" />
+                    <span className="text-xs font-bold text-white tracking-wide">Cloud Database URL</span>
+                  </div>
+                  {isCloudConfigured && (
+                    <button
+                      type="button"
+                      onClick={() => setShowDbConfigDrawer(false)}
+                      className="text-xs text-neutral-400 hover:text-white flex items-center space-x-1 cursor-pointer"
+                    >
+                      <FontAwesomeIcon icon={faArrowLeft} className="w-3 h-3" />
+                      <span>Back to Login</span>
+                    </button>
                   )}
                 </div>
-                <span className="text-xs text-neutral-300 group-hover:text-white transition-colors font-medium">
-                  {getRememberLabel()}
-                </span>
-              </label>
 
-              <button
-                type="button"
-                onClick={() => setMode('cloud-register')}
-                className="text-[11px] text-neutral-400 hover:text-[#00FF88] transition-colors cursor-pointer"
-              >
-                Create Account
-              </button>
-            </div>
+                <p className="text-[11px] text-neutral-400 leading-relaxed">
+                  Enter any SQL database URL for encrypted cross-device synchronization (e.g. Supabase, Neon, CockroachDB, or self-hosted).
+                </p>
 
-            <button
-              type="submit"
-              disabled={loading || lockoutSeconds > 0 || !identifier || !loginPassword}
-              className="w-full flex items-center justify-center space-x-2 py-3 rounded-xl bg-[#00FF88] text-black font-bold text-xs hover:bg-[#00E676] active:scale-98 transition-all shadow-[0_0_25px_rgba(0,255,136,0.3)] disabled:opacity-40 cursor-pointer"
-            >
-              {loading ? (
-                <>
-                  <FontAwesomeIcon icon={faArrowsRotate} className="w-3.5 h-3.5 animate-spin" />
-                  <span>Signing In...</span>
-                </>
-              ) : (
-                <>
-                  <span>Sign In to Cloud</span>
-                  <FontAwesomeIcon icon={faArrowRight} className="w-3.5 h-3.5" />
-                </>
-              )}
-            </button>
-          </form>
-        )}
+                <div className="group flex items-center h-[42px] bg-[#050806] border border-white/10 rounded-xl px-3 focus-within:border-[#00FF88] focus-within:ring-1 focus-within:ring-[#00FF88]/30 transition-all">
+                  <FontAwesomeIcon icon={faPlug} className="w-3.5 h-3.5 text-neutral-500 group-focus-within:text-[#00FF88] mr-2" />
+                  <input
+                    type="text"
+                    value={customDbUrl}
+                    onChange={(e) => setCustomDbUrl(e.target.value)}
+                    placeholder="postgresql://user:password@host:5432/dbname"
+                    className="w-full bg-transparent text-xs text-white placeholder-neutral-600 focus:outline-none font-mono"
+                  />
+                </div>
 
-        {/* ==================== 4. CLOUD REGISTER MODE ==================== */}
-        {mode === 'cloud-register' && (
-          <form onSubmit={handleCloudRegisterSubmit} className="w-full space-y-3">
-            <div className="group flex items-center h-[46px] bg-[#050806] border border-white/10 rounded-xl px-3.5 focus-within:border-[#00FF88] focus-within:ring-2 focus-within:ring-[#00FF88]/20 focus-within:shadow-[0_0_20px_rgba(0,255,136,0.18)] transition-all">
-              <FontAwesomeIcon icon={faUser} className="w-4 h-4 text-neutral-500 group-focus-within:text-[#00FF88] transition-colors shrink-0 mr-2.5" />
-              <input
-                type="text"
-                value={regUsername}
-                onChange={(e) => setRegUsername(e.target.value)}
-                placeholder="Choose username..."
-                autoFocus
-                className="w-full bg-transparent text-sm text-white placeholder-neutral-500 focus:outline-none tracking-wider"
-              />
-            </div>
-            {usernameValidationMsg && (
-              <p className="text-[11px] text-amber-400 text-left pl-1">{usernameValidationMsg}</p>
+                {dbTestResult && (
+                  <div
+                    className={`p-2 rounded-xl text-[11px] flex items-center space-x-2 ${
+                      dbTestResult.success
+                        ? 'bg-emerald-950/40 border border-emerald-500/30 text-emerald-300'
+                        : 'bg-red-950/40 border border-red-500/30 text-red-300'
+                    }`}
+                  >
+                    <FontAwesomeIcon
+                      icon={dbTestResult.success ? faCircleCheck : faCircleExclamation}
+                      className="w-3.5 h-3.5 flex-shrink-0"
+                    />
+                    <span className="break-all">{dbTestResult.message}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center space-x-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleTestConnection}
+                    disabled={isTestingDb || !customDbUrl.trim()}
+                    className="flex-1 py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-neutral-200 transition-all cursor-pointer disabled:opacity-40"
+                  >
+                    {isTestingDb ? (
+                      <span className="flex items-center justify-center space-x-1.5">
+                        <FontAwesomeIcon icon={faArrowsRotate} className="w-3 h-3 animate-spin" />
+                        <span>Testing...</span>
+                      </span>
+                    ) : (
+                      <span>Test Connection</span>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveDbConfig}
+                    disabled={isSavingDb || !customDbUrl.trim()}
+                    className="flex-1 py-2 px-3 rounded-xl bg-[#00FF88] hover:bg-[#00E676] text-black text-xs font-bold transition-all shadow-[0_0_15px_rgba(0,255,136,0.2)] cursor-pointer disabled:opacity-40"
+                  >
+                    {isSavingDb ? (
+                      <span className="flex items-center justify-center space-x-1.5">
+                        <FontAwesomeIcon icon={faArrowsRotate} className="w-3 h-3 animate-spin" />
+                        <span>Saving...</span>
+                      </span>
+                    ) : (
+                      <span>Save & Connect</span>
+                    )}
+                  </button>
+                </div>
+
+                {isCloudConfigured && (
+                  <button
+                    type="button"
+                    onClick={handleDisconnectDb}
+                    className="w-full text-center text-[10px] text-red-400 hover:text-red-300 transition-colors pt-1 cursor-pointer"
+                  >
+                    Disconnect Cloud Server (Revert to Offline)
+                  </button>
+                )}
+              </div>
+            ) : (
+              /* When DB is already configured: Show Status Header & Switcher */
+              <div className="w-full space-y-3.5">
+                {/* Connected Status Bar */}
+                <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-[#00FF88]/10 border border-[#00FF88]/20 text-left">
+                  <div className="flex items-center space-x-2 min-w-0">
+                    <span className="w-2 h-2 rounded-full bg-[#00FF88] shadow-[0_0_8px_#00FF88] animate-pulse shrink-0" />
+                    <span className="text-xs font-medium text-white truncate font-mono">
+                      {maskedDbUrl || 'Cloud Database Online'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowDbConfigDrawer(true)}
+                    className="text-[11px] text-[#00FF88] hover:underline flex items-center space-x-1 shrink-0 ml-2 cursor-pointer font-medium"
+                  >
+                    <FontAwesomeIcon icon={faGear} className="w-3 h-3" />
+                    <span>Change</span>
+                  </button>
+                </div>
+
+                {/* Sub-toggle: Sign In vs Create Account */}
+                <div className="w-full flex items-center justify-center space-x-1 bg-white/5 p-1 rounded-xl border border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('cloud-login');
+                      setError(null);
+                    }}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                      mode === 'cloud-login'
+                        ? 'bg-[#00FF88] text-black shadow-[0_0_12px_rgba(0,255,136,0.3)]'
+                        : 'text-neutral-400 hover:text-white'
+                    }`}
+                  >
+                    Sign In
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('cloud-register');
+                      setError(null);
+                    }}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                      mode === 'cloud-register'
+                        ? 'bg-[#00FF88] text-black shadow-[0_0_12px_rgba(0,255,136,0.3)]'
+                        : 'text-neutral-400 hover:text-white'
+                    }`}
+                  >
+                    Create Account
+                  </button>
+                </div>
+
+                {/* ==================== CLOUD LOGIN ==================== */}
+                {mode === 'cloud-login' && (
+                  <form onSubmit={handleCloudLoginSubmit} className="w-full space-y-3">
+                    <div className="group flex items-center h-[46px] bg-[#050806] border border-white/10 rounded-xl px-3.5 focus-within:border-[#00FF88] focus-within:ring-2 focus-within:ring-[#00FF88]/20 focus-within:shadow-[0_0_20px_rgba(0,255,136,0.18)] transition-all">
+                      <FontAwesomeIcon icon={faUser} className="w-4 h-4 text-neutral-500 group-focus-within:text-[#00FF88] transition-colors shrink-0 mr-2.5" />
+                      <input
+                        type="text"
+                        value={identifier}
+                        onChange={(e) => setIdentifier(e.target.value)}
+                        placeholder="Username or Email..."
+                        autoFocus
+                        disabled={lockoutSeconds > 0}
+                        className="w-full bg-transparent text-sm text-white placeholder-neutral-500 focus:outline-none tracking-wider disabled:opacity-50"
+                      />
+                    </div>
+
+                    <div className="relative">
+                      <div className="group flex items-center h-[46px] bg-[#050806] border border-white/10 rounded-xl px-3.5 focus-within:border-[#00FF88] focus-within:ring-2 focus-within:ring-[#00FF88]/20 focus-within:shadow-[0_0_20px_rgba(0,255,136,0.18)] transition-all">
+                        <FontAwesomeIcon icon={faKey} className="w-4 h-4 text-neutral-500 group-focus-within:text-[#00FF88] transition-colors shrink-0 mr-2.5" />
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          value={loginPassword}
+                          onChange={(e) => setLoginPassword(e.target.value)}
+                          placeholder="Password..."
+                          disabled={lockoutSeconds > 0}
+                          className="w-full bg-transparent text-sm text-white placeholder-neutral-500 focus:outline-none tracking-wider disabled:opacity-50"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="text-neutral-500 hover:text-white transition-colors p-1 rounded-md ml-1.5 focus:outline-none cursor-pointer"
+                          tabIndex={-1}
+                        >
+                          <FontAwesomeIcon icon={showPassword ? faEyeSlash : faEye} className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between px-1 py-1">
+                      <label className="flex items-center space-x-2.5 cursor-pointer group select-none">
+                        <input
+                          type="checkbox"
+                          checked={rememberMe}
+                          onChange={(e) => setRememberMe(e.target.checked)}
+                          className="sr-only"
+                        />
+                        <div
+                          className={`w-4 h-4 rounded-md border transition-all flex items-center justify-center ${
+                            rememberMe
+                              ? 'bg-[#00FF88] border-[#00FF88] shadow-[0_0_8px_rgba(0,255,136,0.4)]'
+                              : 'bg-[#080D0A] border-white/20 group-hover:border-[#00FF88]/50'
+                          }`}
+                        >
+                          {rememberMe && (
+                            <svg className="w-2.5 h-2.5 text-black stroke-[3]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </div>
+                        <span className="text-xs text-neutral-300 group-hover:text-white transition-colors font-medium">
+                          {getRememberLabel()}
+                        </span>
+                      </label>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={loading || lockoutSeconds > 0 || !identifier || !loginPassword}
+                      className="w-full flex items-center justify-center space-x-2 py-3 rounded-xl bg-[#00FF88] text-black font-bold text-xs hover:bg-[#00E676] active:scale-98 transition-all shadow-[0_0_25px_rgba(0,255,136,0.3)] disabled:opacity-40 cursor-pointer"
+                    >
+                      {loading ? (
+                        <>
+                          <FontAwesomeIcon icon={faArrowsRotate} className="w-3.5 h-3.5 animate-spin" />
+                          <span>Signing In...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Sign In to Cloud Vault</span>
+                          <FontAwesomeIcon icon={faArrowRight} className="w-3.5 h-3.5" />
+                        </>
+                      )}
+                    </button>
+                  </form>
+                )}
+
+                {/* ==================== CLOUD REGISTER ==================== */}
+                {mode === 'cloud-register' && (
+                  <form onSubmit={handleCloudRegisterSubmit} className="w-full space-y-3">
+                    <div className="group flex items-center h-[46px] bg-[#050806] border border-white/10 rounded-xl px-3.5 focus-within:border-[#00FF88] focus-within:ring-2 focus-within:ring-[#00FF88]/20 focus-within:shadow-[0_0_20px_rgba(0,255,136,0.18)] transition-all">
+                      <FontAwesomeIcon icon={faUser} className="w-4 h-4 text-neutral-500 group-focus-within:text-[#00FF88] transition-colors shrink-0 mr-2.5" />
+                      <input
+                        type="text"
+                        value={regUsername}
+                        onChange={(e) => setRegUsername(e.target.value)}
+                        placeholder="Choose username..."
+                        autoFocus
+                        className="w-full bg-transparent text-sm text-white placeholder-neutral-500 focus:outline-none tracking-wider"
+                      />
+                    </div>
+                    {usernameValidationMsg && (
+                      <p className="text-[11px] text-amber-400 text-left pl-1">{usernameValidationMsg}</p>
+                    )}
+
+                    <div className="group flex items-center h-[46px] bg-[#050806] border border-white/10 rounded-xl px-3.5 focus-within:border-[#00FF88] focus-within:ring-2 focus-within:ring-[#00FF88]/20 focus-within:shadow-[0_0_20px_rgba(0,255,136,0.18)] transition-all">
+                      <FontAwesomeIcon icon={faEnvelope} className="w-4 h-4 text-neutral-500 group-focus-within:text-[#00FF88] transition-colors shrink-0 mr-2.5" />
+                      <input
+                        type="email"
+                        value={regEmail}
+                        onChange={(e) => setRegEmail(e.target.value)}
+                        placeholder="Enter email address..."
+                        className="w-full bg-transparent text-sm text-white placeholder-neutral-500 focus:outline-none tracking-wider"
+                      />
+                    </div>
+                    {emailValidationMsg && (
+                      <p className="text-[11px] text-amber-400 text-left pl-1">{emailValidationMsg}</p>
+                    )}
+
+                    <div className="group flex items-center h-[46px] bg-[#050806] border border-white/10 rounded-xl px-3.5 focus-within:border-[#00FF88] focus-within:ring-2 focus-within:ring-[#00FF88]/20 focus-within:shadow-[0_0_20px_rgba(0,255,136,0.18)] transition-all">
+                      <FontAwesomeIcon icon={faKey} className="w-4 h-4 text-neutral-500 group-focus-within:text-[#00FF88] transition-colors shrink-0 mr-2.5" />
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={regPassword}
+                        onChange={(e) => setRegPassword(e.target.value)}
+                        placeholder="Password (min 8 chars)..."
+                        className="w-full bg-transparent text-sm text-white placeholder-neutral-500 focus:outline-none tracking-wider"
+                      />
+                    </div>
+
+                    {/* Password Strength Meter */}
+                    {regPassword && (
+                      <div className="space-y-1 text-left">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-neutral-400 font-medium">Strength:</span>
+                          <span className="text-[#00FF88] font-bold">{passwordAudit.label}</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden flex space-x-1">
+                          {[1, 2, 3, 4].map((step) => (
+                            <div
+                              key={step}
+                              className={`h-full flex-1 rounded-full transition-all duration-300 ${
+                                passwordAudit.score >= step ? passwordAudit.color : 'bg-transparent'
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="group flex items-center h-[46px] bg-[#050806] border border-white/10 rounded-xl px-3.5 focus-within:border-[#00FF88] focus-within:ring-2 focus-within:ring-[#00FF88]/20 focus-within:shadow-[0_0_20px_rgba(0,255,136,0.18)] transition-all">
+                      <FontAwesomeIcon icon={faKey} className="w-4 h-4 text-neutral-500 group-focus-within:text-[#00FF88] transition-colors shrink-0 mr-2.5" />
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={regConfirmPassword}
+                        onChange={(e) => setRegConfirmPassword(e.target.value)}
+                        placeholder="Confirm password..."
+                        className="w-full bg-transparent text-sm text-white placeholder-neutral-500 focus:outline-none tracking-wider"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={loading || !regUsername || !regEmail || !regPassword || regPassword !== regConfirmPassword}
+                      className="w-full flex items-center justify-center space-x-2 py-3 rounded-xl bg-[#00FF88] text-black font-bold text-xs hover:bg-[#00E676] active:scale-98 transition-all shadow-[0_0_25px_rgba(0,255,136,0.3)] disabled:opacity-40 cursor-pointer"
+                    >
+                      {loading ? (
+                        <>
+                          <FontAwesomeIcon icon={faArrowsRotate} className="w-3.5 h-3.5 animate-spin" />
+                          <span>Creating Account...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Create Cloud Account</span>
+                          <FontAwesomeIcon icon={faArrowRight} className="w-3.5 h-3.5" />
+                        </>
+                      )}
+                    </button>
+                  </form>
+                )}
+              </div>
             )}
-
-            <div className="group flex items-center h-[46px] bg-[#050806] border border-white/10 rounded-xl px-3.5 focus-within:border-[#00FF88] focus-within:ring-2 focus-within:ring-[#00FF88]/20 focus-within:shadow-[0_0_20px_rgba(0,255,136,0.18)] transition-all">
-              <FontAwesomeIcon icon={faEnvelope} className="w-4 h-4 text-neutral-500 group-focus-within:text-[#00FF88] transition-colors shrink-0 mr-2.5" />
-              <input
-                type="email"
-                value={regEmail}
-                onChange={(e) => setRegEmail(e.target.value)}
-                placeholder="Enter email address..."
-                className="w-full bg-transparent text-sm text-white placeholder-neutral-500 focus:outline-none tracking-wider"
-              />
-            </div>
-            {emailValidationMsg && (
-              <p className="text-[11px] text-amber-400 text-left pl-1">{emailValidationMsg}</p>
-            )}
-
-            <div className="group flex items-center h-[46px] bg-[#050806] border border-white/10 rounded-xl px-3.5 focus-within:border-[#00FF88] focus-within:ring-2 focus-within:ring-[#00FF88]/20 focus-within:shadow-[0_0_20px_rgba(0,255,136,0.18)] transition-all">
-              <FontAwesomeIcon icon={faKey} className="w-4 h-4 text-neutral-500 group-focus-within:text-[#00FF88] transition-colors shrink-0 mr-2.5" />
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={regPassword}
-                onChange={(e) => setRegPassword(e.target.value)}
-                placeholder="Password (min 8 chars)..."
-                className="w-full bg-transparent text-sm text-white placeholder-neutral-500 focus:outline-none tracking-wider"
-              />
-            </div>
-
-            <div className="group flex items-center h-[46px] bg-[#050806] border border-white/10 rounded-xl px-3.5 focus-within:border-[#00FF88] focus-within:ring-2 focus-within:ring-[#00FF88]/20 focus-within:shadow-[0_0_20px_rgba(0,255,136,0.18)] transition-all">
-              <FontAwesomeIcon icon={faKey} className="w-4 h-4 text-neutral-500 group-focus-within:text-[#00FF88] transition-colors shrink-0 mr-2.5" />
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={regConfirmPassword}
-                onChange={(e) => setRegConfirmPassword(e.target.value)}
-                placeholder="Confirm password..."
-                className="w-full bg-transparent text-sm text-white placeholder-neutral-500 focus:outline-none tracking-wider"
-              />
-            </div>
-
-            <div className="flex items-center justify-between px-1 py-1">
-              <button
-                type="button"
-                onClick={() => setMode('cloud-login')}
-                className="text-[11px] text-neutral-400 hover:text-[#00FF88] transition-colors cursor-pointer"
-              >
-                Already have an account? Sign In
-              </button>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading || !regUsername || !regEmail || !regPassword || regPassword !== regConfirmPassword}
-              className="w-full flex items-center justify-center space-x-2 py-3 rounded-xl bg-[#00FF88] text-black font-bold text-xs hover:bg-[#00E676] active:scale-98 transition-all shadow-[0_0_25px_rgba(0,255,136,0.3)] disabled:opacity-40 cursor-pointer"
-            >
-              {loading ? (
-                <>
-                  <FontAwesomeIcon icon={faArrowsRotate} className="w-3.5 h-3.5 animate-spin" />
-                  <span>Registering Account...</span>
-                </>
-              ) : (
-                <>
-                  <span>Create Cloud Account</span>
-                  <FontAwesomeIcon icon={faArrowRight} className="w-3.5 h-3.5" />
-                </>
-              )}
-            </button>
-          </form>
+          </div>
         )}
 
         {/* Reset Confirmation Modal */}

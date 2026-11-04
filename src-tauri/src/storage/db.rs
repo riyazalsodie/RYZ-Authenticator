@@ -4,21 +4,63 @@ use std::collections::HashMap;
 use std::time::{Instant, Duration, SystemTime, UNIX_EPOCH};
 use std::path::PathBuf;
 use std::fs;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::Mutex;
 use crate::storage::vault::AccountRecord;
 use crate::crypto::totp::Algorithm;
+use crate::crypto::dpapi::{save_encrypted_config, load_encrypted_config, clear_encrypted_config};
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
 
 /// Optional Cloud Database Configuration
-/// No hardcoded credentials. Reads from DATABASE_URL or RYZ_DATABASE_URL environment variable,
-/// or user-configured endpoint. When omitted, RYZ Authenticator operates in 100% offline local-first mode.
+/// No hardcoded credentials. Checks user-saved encrypted config, then DATABASE_URL / RYZ_DATABASE_URL env.
+/// When omitted, RYZ Authenticator operates in 100% offline local-first mode.
 fn get_configured_db_url() -> String {
     std::env::var("DATABASE_URL")
         .or_else(|_| std::env::var("RYZ_DATABASE_URL"))
         .unwrap_or_default()
+}
+
+fn resolve_initial_db_url(passed_url: Option<String>) -> String {
+    if let Some(u) = passed_url {
+        if !u.trim().is_empty() {
+            return u.trim().to_string();
+        }
+    }
+    if let Some(bytes) = load_encrypted_config("cloud_db_url") {
+        if let Ok(saved) = String::from_utf8(bytes) {
+            let trimmed = saved.trim().to_string();
+            if !trimmed.is_empty() {
+                return trimmed;
+            }
+        }
+    }
+    get_configured_db_url()
+}
+
+pub fn mask_connection_url(url: &str) -> String {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if let Some(at_idx) = trimmed.find('@') {
+        if let Some(colon_slash) = trimmed.find("://") {
+            let prefix = &trimmed[..colon_slash + 3];
+            let user_part = &trimmed[colon_slash + 3..at_idx];
+            let host_part = &trimmed[at_idx..];
+            if let Some(colon_user) = user_part.find(':') {
+                let user = &user_part[..colon_user];
+                return format!("{}{}:••••••••{}", prefix, user, host_part);
+            }
+        }
+    }
+    if trimmed.len() > 16 {
+        format!("{}••••••••", &trimmed[..12])
+    } else {
+        "••••••••".to_string()
+    }
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
@@ -201,23 +243,104 @@ impl SecurityRateLimiter {
 }
 
 pub struct Database {
-    db_url: String,
+    db_url: Arc<tokio::sync::Mutex<String>>,
+    is_configured: Arc<AtomicBool>,
     client: Arc<Mutex<Option<Client>>>,
     rate_limiter: Arc<Mutex<SecurityRateLimiter>>,
 }
 
 impl Database {
     pub fn new(db_url: Option<String>, app_dir: Option<PathBuf>) -> Self {
-        let url = db_url.unwrap_or_else(get_configured_db_url);
+        let url = resolve_initial_db_url(db_url);
+        let configured = !url.trim().is_empty();
         Self {
-            db_url: url,
+            db_url: Arc::new(tokio::sync::Mutex::new(url)),
+            is_configured: Arc::new(AtomicBool::new(configured)),
             client: Arc::new(Mutex::new(None)),
             rate_limiter: Arc::new(Mutex::new(SecurityRateLimiter::new(app_dir))),
         }
     }
 
     pub fn is_cloud_configured(&self) -> bool {
-        !self.db_url.trim().is_empty()
+        self.is_configured.load(Ordering::Relaxed)
+    }
+
+    pub async fn get_db_url(&self) -> String {
+        let lock = self.db_url.lock().await;
+        lock.clone()
+    }
+
+    pub async fn get_masked_db_url(&self) -> String {
+        let raw = self.get_db_url().await;
+        mask_connection_url(&raw)
+    }
+
+    pub async fn update_cloud_url(&self, new_url: String) -> Result<(), String> {
+        let trimmed = new_url.trim();
+        if trimmed.is_empty() {
+            return self.disconnect_cloud().await;
+        }
+
+        // Test connection & initialize schema
+        let (client, connection) = tokio_postgres::connect(trimmed, NoTls)
+            .await
+            .map_err(|e| format!("Database connection error: {}", e))?;
+
+        tokio::spawn(async move {
+            if let Err(e) = connection.await {
+                eprintln!("Database background connection error: {}", e);
+            }
+        });
+
+        self.init_schema(&client).await?;
+
+        // Persist encrypted on disk
+        let _ = save_encrypted_config("cloud_db_url", trimmed.as_bytes());
+
+        // Update in-memory state
+        {
+            let mut url_lock = self.db_url.lock().await;
+            *url_lock = trimmed.to_string();
+        }
+        self.is_configured.store(true, Ordering::Relaxed);
+
+        let mut lock = self.client.lock().await;
+        *lock = Some(client);
+
+        Ok(())
+    }
+
+    pub async fn test_connection_url(url: &str) -> Result<String, String> {
+        let trimmed = url.trim();
+        if trimmed.is_empty() {
+            return Err("Database connection URL cannot be empty".to_string());
+        }
+
+        let (client, connection) = tokio_postgres::connect(trimmed, NoTls)
+            .await
+            .map_err(|e| format!("Could not connect to database: {}", e))?;
+
+        tokio::spawn(async move {
+            let _ = connection.await;
+        });
+
+        client.execute("SELECT 1;", &[])
+            .await
+            .map_err(|e| format!("Database query error: {}", e))?;
+
+        Ok("Connection verified! Database is reachable and ready.".to_string())
+    }
+
+    pub async fn disconnect_cloud(&self) -> Result<(), String> {
+        clear_encrypted_config("cloud_db_url");
+        {
+            let mut url_lock = self.db_url.lock().await;
+            url_lock.clear();
+        }
+        self.is_configured.store(false, Ordering::Relaxed);
+        let mut lock = self.client.lock().await;
+        *lock = None;
+        Ok(())
     }
 
     pub async fn should_allow_sync(&self, user_id: &str, min_interval_ms: u64) -> bool {
@@ -231,13 +354,18 @@ impl Database {
             return Ok(());
         }
 
-        let (client, connection) = tokio_postgres::connect(&self.db_url, NoTls)
+        let url = self.get_db_url().await;
+        if url.trim().is_empty() {
+            return Ok(());
+        }
+
+        let (client, connection) = tokio_postgres::connect(&url, NoTls)
             .await
-            .map_err(|e| format!("Failed to connect to PostgreSQL: {}", e))?;
+            .map_err(|e| format!("Database connection error: {}", e))?;
 
         tokio::spawn(async move {
             if let Err(e) = connection.await {
-                eprintln!("PostgreSQL connection error: {}", e);
+                eprintln!("Database connection error: {}", e);
             }
         });
 
@@ -297,13 +425,18 @@ impl Database {
         if !self.is_cloud_configured() {
             return Err("Cloud sync is not configured. Vault operates in local-first offline mode.".to_string());
         }
-        let (client, connection) = tokio_postgres::connect(&self.db_url, NoTls)
+        let url = self.get_db_url().await;
+        if url.trim().is_empty() {
+            return Err("Cloud database URL is empty.".to_string());
+        }
+
+        let (client, connection) = tokio_postgres::connect(&url, NoTls)
             .await
-            .map_err(|e| format!("PostgreSQL connection failure: {}", e))?;
+            .map_err(|e| format!("Database connection error: {}", e))?;
 
         tokio::spawn(async move {
             if let Err(e) = connection.await {
-                eprintln!("Connection error: {}", e);
+                eprintln!("Database connection error: {}", e);
             }
         });
 
@@ -377,7 +510,7 @@ impl Database {
                 let _ = limiter.record_auth_failure(&trimmed_username);
                 let err_str = e.to_string();
                 if err_str.contains("unique") || err_str.contains("duplicate key") {
-                    return Err("Username or Email already registered in PostgreSQL database.".to_string());
+                    return Err("Username or Email already registered.".to_string());
                 } else {
                     return Err(format!("Failed to create user: {}", e));
                 }
@@ -623,7 +756,7 @@ impl Database {
                 ],
             )
             .await
-            .map_err(|e| format!("Failed to save account to PostgreSQL: {}", e))?;
+            .map_err(|e| format!("Failed to save account to cloud: {}", e))?;
 
         Ok(())
     }
@@ -639,7 +772,7 @@ impl Database {
                 &[&account_id, &user_uuid],
             )
             .await
-            .map_err(|e| format!("Failed to delete account from PostgreSQL: {}", e))?;
+            .map_err(|e| format!("Failed to delete account from cloud: {}", e))?;
 
         Ok(())
     }

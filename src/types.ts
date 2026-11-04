@@ -26,6 +26,12 @@ export interface VaultStatus {
   cloud_configured?: boolean;
 }
 
+export interface CloudConfig {
+  configured: boolean;
+  masked_url: string;
+  raw_url: string;
+}
+
 export type ViewMode = 'all' | 'favorites' | 'groups' | 'settings';
 
 export const DEFAULT_GROUPS = ['Personal', 'Work', 'Finance', 'Gaming', 'Social', 'Crypto'] as const;

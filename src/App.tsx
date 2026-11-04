@@ -58,7 +58,7 @@ export const App: React.FC = () => {
     ])
   );
 
-  // Bidirectional Cloud Synchronization with PostgreSQL (Rate-limited & Safe)
+  // Bidirectional Cloud Synchronization (Rate-limited & Safe)
   const handleSyncCloud = useCallback(async () => {
     if (!currentUser) return;
     const now = Date.now();
@@ -250,7 +250,7 @@ export const App: React.FC = () => {
     await fetchCodes();
   };
 
-  // Cloud Auth Handlers: Login & Register with PostgreSQL (Optional Cloud Sync)
+  // Cloud Auth Handlers: Login & Register (Optional Cloud Sync)
   const handleLogin = async (identifier: string, pass: string, rememberMe: boolean) => {
     const profile = await invoke<UserProfile>('login_user', {
       identifier,
@@ -676,7 +676,7 @@ export const App: React.FC = () => {
                     </div>
                     <h3 className="text-sm font-semibold text-neutral-300">No authenticator accounts found</h3>
                     <p className="text-xs text-neutral-500 max-w-sm mt-1 mb-4">
-                      Add an account manually, scan a QR code screenshot, or sync from PostgreSQL cloud.
+                      Add an account manually, scan a QR code screenshot, or sync from cloud.
                     </p>
                     <div className="flex flex-wrap items-center justify-center gap-2.5">
                       <button

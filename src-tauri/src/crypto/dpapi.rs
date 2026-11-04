@@ -341,3 +341,42 @@ pub fn clear_remembered_session() {
         }
     }
 }
+
+/// Securely persists arbitrary configuration (e.g. user cloud database URL)
+/// using OS-level hardware-bound DPAPI/envelope encryption.
+pub fn save_encrypted_config(name: &str, data: &[u8]) -> Result<(), String> {
+    let base_path = get_session_file_path()?;
+    let dir = base_path.parent().ok_or_else(|| "Invalid storage path".to_string())?;
+    let target = dir.join(format!("{}.dat", name));
+    let protected = protect_bytes(data)?;
+    fs::write(&target, protected).map_err(|e| format!("Failed to write encrypted config {}: {}", name, e))?;
+    Ok(())
+}
+
+/// Loads and decrypts previously saved hardware-bound configuration.
+pub fn load_encrypted_config(name: &str) -> Option<Vec<u8>> {
+    let base_path = get_session_file_path().ok()?;
+    let dir = base_path.parent()?;
+    let target = dir.join(format!("{}.dat", name));
+    if !target.exists() {
+        return None;
+    }
+    let encrypted = fs::read(&target).ok()?;
+    unprotect_bytes(&encrypted).ok()
+}
+
+/// Securely removes previously saved hardware-bound configuration.
+pub fn clear_encrypted_config(name: &str) {
+    if let Ok(base_path) = get_session_file_path() {
+        if let Some(dir) = base_path.parent() {
+            let target = dir.join(format!("{}.dat", name));
+            if target.exists() {
+                if let Ok(meta) = fs::metadata(&target) {
+                    let zeroes = vec![0u8; meta.len() as usize];
+                    let _ = fs::write(&target, zeroes);
+                }
+                let _ = fs::remove_file(&target);
+            }
+        }
+    }
+}
