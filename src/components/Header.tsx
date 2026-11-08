@@ -62,7 +62,7 @@ export const Header: React.FC<HeaderProps> = ({
             />
             <div className="min-w-0">
               <div className="flex items-center space-x-1.5">
-                <span className="text-sm font-extrabold text-white tracking-wider">RYZ AUTH</span>
+                <span className="text-sm font-nasalization text-white tracking-wider">RYZ AUTH</span>
                 <span className="w-1.5 h-1.5 rounded-full bg-[#00FF88] shadow-[0_0_8px_#00FF88]" />
               </div>
               {currentUser ? (
@@ -110,7 +110,7 @@ export const Header: React.FC<HeaderProps> = ({
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder="Search accounts, tags, issuers..."
-            className="w-full pl-9 pr-8 py-2.5 bg-[#050806] border border-white/10 rounded-xl text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-[#00FF88] focus:ring-1 focus:ring-[#00FF88] transition-all"
+            className="w-full pl-9 pr-8 py-2.5 bg-[#050806] border border-[#16261C] rounded-xl text-xs text-neutral-200 placeholder-neutral-500 outline-none focus:outline-none focus-visible:outline-none focus:border-[#00FF88] focus:ring-0 focus:bg-[#050806] active:bg-[#050806] caret-[#00FF88] select-text transition-colors duration-150 [-webkit-tap-highlight-color:transparent] selection:bg-[#00FF88]/30 selection:text-white"
           />
           {searchQuery && (
             <button
@@ -141,7 +141,7 @@ export const Header: React.FC<HeaderProps> = ({
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
               placeholder="Search accounts, tags, issuers..."
-              className="w-full pl-9 pr-8 py-2 bg-[#050806] border border-white/10 rounded-xl text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-[#00FF88] focus:ring-1 focus:ring-[#00FF88] transition-all"
+              className="w-full pl-9 pr-8 py-2 bg-[#050806] border border-[#16261C] rounded-xl text-xs text-neutral-200 placeholder-neutral-500 outline-none focus:outline-none focus-visible:outline-none focus:border-[#00FF88] focus:ring-0 focus:bg-[#050806] active:bg-[#050806] caret-[#00FF88] select-text transition-colors duration-150 [-webkit-tap-highlight-color:transparent] selection:bg-[#00FF88]/30 selection:text-white"
             />
             {searchQuery && (
               <button

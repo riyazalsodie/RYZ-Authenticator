@@ -12,6 +12,7 @@
 *The lightweight, native Rust alternative to Authy Desktop, Google Authenticator, and 2FAS.*
 
 [![Latest Release](https://img.shields.io/github/v/release/riyazalsodie/RYZ-Authenticator?color=%2300FF88&label=Download&style=for-the-badge&logo=github)](https://github.com/riyazalsodie/RYZ-Authenticator/releases)
+[![Website](https://img.shields.io/badge/Website-auth.riyazz.dev-00FF88?style=for-the-badge&logo=googlechrome&logoColor=black)](https://auth.riyazz.dev)
 [![GitHub Stars](https://img.shields.io/github/stars/riyazalsodie/RYZ-Authenticator?color=%2300FF88&style=for-the-badge&logo=github)](https://github.com/riyazalsodie/RYZ-Authenticator/stargazers)
 [![Downloads](https://img.shields.io/github/downloads/riyazalsodie/RYZ-Authenticator/total?color=%2300FF88&style=for-the-badge)](https://github.com/riyazalsodie/RYZ-Authenticator/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple?style=for-the-badge)](LICENSE)
@@ -22,7 +23,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
 [![Platforms](https://img.shields.io/badge/Platforms-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android%20%7C%20iOS-00FF88?style=flat-square)]()
 
-[**⬇ Download Latest Release**](https://github.com/riyazalsodie/RYZ-Authenticator/releases) • [**Why RYZ Auth?**](#-why-ryz-authenticator) • [**Comparison Table**](#-authenticator-comparison) • [**User Guide**](#-quick-start--user-guide) • [**Security & Performance**](#-security--engine-optimizations) • [**Build from Source**](#-building-from-source)
+[**🌐 Official Website (auth.riyazz.dev)**](https://auth.riyazz.dev) • [**⬇ Download Latest Release**](https://github.com/riyazalsodie/RYZ-Authenticator/releases) • [**Why RYZ Auth?**](#-why-ryz-authenticator) • [**Comparison Table**](#-authenticator-comparison) • [**User Guide**](#-quick-start--user-guide) • [**Security & Performance**](#-security--engine-optimizations) • [**Build from Source**](#-building-from-source)
 
 </div>
 

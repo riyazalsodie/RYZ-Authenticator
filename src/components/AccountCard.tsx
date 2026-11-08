@@ -318,26 +318,26 @@ export const AccountCard: React.FC<AccountCardProps> = ({
 
       {/* Bottom Row on Mobile / Right Side on Desktop: Code Display + Countdown + Desktop Actions */}
       <div
-        className={`flex items-center justify-between sm:justify-end sm:space-x-4 sm:bg-transparent border sm:border-0 rounded-xl px-3.5 py-2 sm:p-0 shrink-0 transition-all duration-200 ${
+        className={`flex items-center justify-between sm:justify-end sm:space-x-4 sm:bg-transparent border sm:border-0 rounded-xl px-3.5 py-2 sm:p-0 shrink-0 transition-all duration-200 select-none ${
           copyPhase === 'in'
             ? 'bg-[#00FF88]/15 border-[#00FF88]/45 shadow-[0_0_18px_rgba(0,255,136,0.15)] sm:shadow-none'
-            : 'bg-[#060B08] border-white/5'
+            : 'bg-[#060B08] border-[#16261C]'
         }`}
       >
         <button
           type="button"
           onClick={handleCopy}
-          className={`flex items-center space-x-3 sm:px-3 sm:py-1.5 rounded-xl transition-all duration-200 focus:outline-none cursor-pointer flex-1 sm:flex-initial justify-between sm:justify-start ${
+          className={`flex items-center space-x-3 sm:px-3 sm:py-1.5 rounded-xl transition-all duration-200 outline-none focus:outline-none focus:ring-0 active:outline-none [-webkit-tap-highlight-color:transparent] select-none cursor-pointer flex-1 sm:flex-initial justify-between sm:justify-start ${
             copyPhase === 'in'
               ? 'sm:bg-[#00FF88]/15 sm:shadow-[0_0_15px_rgba(0,255,136,0.12)]'
-              : 'sm:hover:bg-[#00FF88]/10 active:bg-[#00FF88]/15'
+              : 'sm:hover:bg-[#00FF88]/10 active:bg-[#00FF88]/20'
           }`}
           title="Tap to copy 2FA code"
         >
-          <span className="code-font text-2xl font-extrabold tracking-[0.2em] text-[#00FF88] sm:text-neutral-100 sm:group-hover:text-[#00FF88] transition-colors">
+          <span className="code-font text-2xl font-extrabold tracking-[0.2em] text-[#00FF88] transition-colors select-none">
             {formattedCode}
           </span>
-          <div className="flex items-center space-x-1.5 text-neutral-400 hover:text-[#00FF88] transition-colors pr-2 sm:pr-0 min-w-[64px] justify-end">
+          <div className="flex items-center space-x-1.5 text-[#00FF88] transition-colors pr-2 sm:pr-0 min-w-[64px] justify-end select-none">
             {copyPhase !== 'idle' ? (
               <span
                 key={copyKey}

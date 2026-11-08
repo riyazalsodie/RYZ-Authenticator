@@ -5,7 +5,7 @@
   "description": "Fast, Open-Source, Zero-Knowledge 2FA & TOTP Authenticator for Windows, macOS, Linux, Android & iOS — Built in Rust & Tauri 2.0 (Authy Desktop Alternative)",
   "author": "R ! Y 4 Z",
   "license": "MIT",
-  "homepage": "https://github.com/riyazalsodie/RYZ-Authenticator",
+  "homepage": "https://auth.riyazz.dev",
   "repository": {
     "type": "git",
     "url": "https://github.com/riyazalsodie/RYZ-Authenticator.git"

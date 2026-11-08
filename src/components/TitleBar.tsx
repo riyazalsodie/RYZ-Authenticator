@@ -103,7 +103,7 @@ export const TitleBar: React.FC = () => {
           alt="RYZ"
           className="w-5 h-5 object-contain filter drop-shadow-[0_0_8px_rgba(0,255,136,0.5)]"
         />
-        <span className="text-xs font-extrabold text-white tracking-wider flex items-center space-x-1.5">
+        <span className="text-xs font-nasalization text-white tracking-wider flex items-center space-x-1.5">
           <span>RYZ AUTH</span>
           <span className="w-1.5 h-1.5 rounded-full bg-[#00FF88] inline-block shadow-[0_0_8px_#00FF88]" />
         </span>

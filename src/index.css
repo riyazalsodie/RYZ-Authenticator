@@ -2,6 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: 'Nasalization';
+  src: url('/fonts/Nasalization.otf') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+.font-nasalization {
+  font-family: 'Nasalization', sans-serif;
+  letter-spacing: 0.08em;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
 @layer base {
   :root {
     --background: 0 0% 0%;

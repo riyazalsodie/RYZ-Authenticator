@@ -57,7 +57,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className="w-8 h-8 object-contain filter drop-shadow-[0_0_12px_rgba(0,255,136,0.45)]"
               />
               <div>
-                <h1 className="text-sm font-bold tracking-wider text-white">RYZ AUTH</h1>
+                <h1 className="text-sm font-nasalization tracking-wider text-white">RYZ AUTH</h1>
                 <p className="text-[10px] text-neutral-400 font-medium">{getAppTagline()}</p>
               </div>
             </div>
